@@ -88,10 +88,12 @@ L: C3/1:1 | G2/1:5 | C3/1 | G2/2 C3/2 |
 
 ## Roadmap
 
-- v0.2 — edit fingers by clicking a bar, export MusicXML with `<fingering>`
-- v0.3 — better two-hand support: practise hands separately with the other hand played for you
-- v0.4 — vector-PDF import (SMuFL fonts), sampled piano and your own SoundFont (SF2/SF3), progress statistics
-- later — record your playing to `.mid`, MIDI output to an external synth, scanned-sheet OMR, keyboard profiles, offline PWA
+Every release starts with a session on a real controller (Komplete Kontrol M32, Chrome over https); what breaks there comes first.
+
+- **v0.2 — learn your own piece.** Edit a finger by clicking its bar; edits are kept in the browser per file and the automatic fingering works around them. Export MusicXML with `<fingering>`. Count-in and metronome for the in-tempo mode. Keyboard profile: your controller's range on screen and a warning when a piece does not fit it. Record your playing and export it as `.mid`.
+- **v0.3 — two hands for real.** Practise one hand while the trainer plays the other. Progress statistics per piece and per bar range. Offline use as a PWA.
+- **v0.4 — sound.** Sampled piano (Salamander Grand Piano as SF3 through SpessaSynth) and your own SoundFont packs (SF2/SF3). More public-domain pieces in the library.
+- **Deferred:** vector-PDF import in the browser, MIDI output to an external synth, scanned-sheet recognition (OMR).
 
 ## Credits and licenses
 

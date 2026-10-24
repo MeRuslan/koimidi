@@ -97,6 +97,29 @@ export class Synth {
     this.voices.delete(pitch);
   }
 
+  /** Metronome click: a short wooden-sounding blip, `delay` seconds from now, higher on the downbeat. */
+  click(delay = 0, accent = false): void {
+    const ac = this.ac;
+    if (!ac || !this.master) return;
+    const t = ac.currentTime + Math.max(0, delay);
+    const o = ac.createOscillator();
+    const bp = ac.createBiquadFilter();
+    const g = ac.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(accent ? 1760 : 1250, t);
+    o.frequency.exponentialRampToValueAtTime(accent ? 1100 : 800, t + 0.05);
+    bp.type = 'bandpass';
+    bp.frequency.value = accent ? 1700 : 1200;
+    bp.Q.value = 1.5;
+    const peak = accent ? 0.9 : 0.6;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    o.connect(bp).connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.09);
+  }
+
   setSustain(on: boolean): void {
     this.sustain = on;
     if (!on) for (const [p, v] of [...this.voices]) if (!v.held) this.noteOff(p, true);

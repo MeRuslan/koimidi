@@ -67,6 +67,18 @@ export function isBlackKey(pitch: number): boolean {
   return pc === 1 || pc === 3 || pc === 6 || pc === 8 || pc === 10;
 }
 
+/** Lowest and highest pitch among the notes (optionally one hand); undefined for an empty selection. */
+export function pitchSpan(score: Score, hand?: Hand): { low?: number; high?: number } {
+  let low: number | undefined;
+  let high: number | undefined;
+  for (const n of score.notes) {
+    if (hand && n.hand !== hand) continue;
+    if (low === undefined || n.pitch < low) low = n.pitch;
+    if (high === undefined || n.pitch > high) high = n.pitch;
+  }
+  return { low, high };
+}
+
 export function bpmAt(score: Score, t: number): number {
   let bpm = score.tempo.length ? score.tempo[0].bpm : 120;
   for (const ev of score.tempo) {

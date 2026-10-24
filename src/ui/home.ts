@@ -1,6 +1,7 @@
 /** Home screen: open a file, your files, built-in library. */
 import type { App } from '../app';
-import { barsLabel, getLang, t } from '../i18n';
+import { barsLabel, getLang, keysLabel, t } from '../i18n';
+import { fits, presetRange } from '../input/profile';
 import { libraryItems } from '../library';
 import { deleteFile, listFiles, type StoredFileMeta } from '../storage/files';
 import { $, el, formatDuration } from './dom';
@@ -21,7 +22,14 @@ export class HomeView {
     return h.R && h.L ? t('piece.hands.both') : h.L ? t('piece.hands.L') : t('piece.hands.R');
   }
 
-  private meta(difficulty: number | null, hands: { R: boolean; L: boolean }, measures: number, seconds?: number): HTMLElement {
+  /** "needs 37 keys" when the piece does not fit the player's controller at any octave. */
+  private fitBadge(low?: number, high?: number): HTMLElement | null {
+    const size = this.app.keyboardSize();
+    if (!size || low === undefined || high === undefined || fits(presetRange(size), low, high)) return null;
+    return el('span', { class: 'fit', text: `⚠ ${t('kb.needs', { keys: keysLabel(high - low + 1) })}`, title: t('kb.needsTitle', { keys: keysLabel(+size) }) });
+  }
+
+  private meta(difficulty: number | null, hands: { R: boolean; L: boolean }, measures: number, seconds?: number, fit?: HTMLElement | null): HTMLElement {
     const m = el('span', { class: 'm' });
     if (difficulty) {
       const dots = el('span', { class: 'dots', title: t(`difficulty.${Math.min(3, difficulty)}` as 'difficulty.1') });
@@ -31,6 +39,7 @@ export class HomeView {
     m.append(el('span', { text: this.handsLabel(hands) }));
     m.append(el('span', { text: barsLabel(measures) }));
     if (seconds) m.append(el('span', { text: formatDuration(seconds) }));
+    if (fit) m.append(fit);
     return m;
   }
 
@@ -43,10 +52,10 @@ export class HomeView {
       const card = el('button', { type: 'button', class: 'card' }, [
         el('span', { class: 't', text: ru ? item.titleRu : item.title }),
         el('span', { class: 'c', text: ru ? item.composerRu : item.composer }),
-        this.meta(item.difficulty, item.hands, item.measures, item.seconds),
+        this.meta(item.difficulty, item.hands, item.measures, item.seconds, this.fitBadge(item.low, item.high)),
       ]);
       if (item.id === last) card.append(el('span', { class: 'badge', text: t('continue') }));
-      card.addEventListener('click', () => this.app.openLibrary(item.id));
+      card.addEventListener('click', () => void this.app.openLibrary(item.id));
       list.append(el('li', {}, [card]));
     }
   }
@@ -66,7 +75,7 @@ export class HomeView {
       el('span', { class: 'tc' }, [el('span', { class: 't', text: f.title || f.name }), el('span', { class: 'c', text: f.composer || f.name })]),
       el('span', { class: 'right' }, [
         ...(isLast ? [el('span', { class: 'badge', text: t('continue') })] : []),
-        this.meta(null, f.hands, f.measures),
+        this.meta(null, f.hands, f.measures, undefined, this.fitBadge(f.low, f.high)),
       ]),
     ]);
     open.addEventListener('click', () => void this.app.openStored(f.id));

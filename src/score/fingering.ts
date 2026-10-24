@@ -67,7 +67,8 @@ function fingerHand(notes: ScoreNote[], hand: Hand): void {
       return { p: sign * rep.pitch, real: rep.pitch, t: g.t, dur, allowed: fixed ? [fixed] : FINGERS, notes: sorted };
     }
     const fingers = chordFingers(sorted.map((n) => sign * n.pitch), sorted);
-    return { p: sign * rep.pitch, real: rep.pitch, t: g.t, dur, allowed: [fingers[fingers.length - 1]], notes: sorted, chordFingers: fingers };
+    const fixedRep = rep.fingerSource === 'file' || rep.fingerSource === 'user' ? rep.finger : undefined;
+    return { p: sign * rep.pitch, real: rep.pitch, t: g.t, dur, allowed: [fixedRep ?? fingers[fingers.length - 1]], notes: sorted, chordFingers: fingers };
   });
 
   const n = events.length;

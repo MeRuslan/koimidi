@@ -1,7 +1,7 @@
 /** File → Score. Detects the format from the bytes, parses in the browser, stores a copy in IndexedDB. */
 import { autoFinger } from './score/fingering';
 import { parseMidi, type MidiSplit } from './score/midi';
-import type { Score } from './score/model';
+import { pitchSpan, type Score } from './score/model';
 import { parseMusicXML, parseMXL } from './score/musicxml';
 import { putFile, sha256, type FileKind, type StoredFile } from './storage/files';
 
@@ -53,6 +53,7 @@ export async function importFile(file: File, split: MidiSplit): Promise<Imported
     composer: score.composer,
     measures: score.measures.length,
     hands: score.hands,
+    ...pitchSpan(score),
   };
   try {
     await putFile(stored);

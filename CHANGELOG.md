@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.0 — 2026-10-25
+
+Learn your own piece.
+
+- Change a finger by clicking its bar (or with keys `1`–`5`); edits are kept in the browser per piece (IndexedDB, keyed by file hash or library id), the automatic fingering works around them, and a dot marks them on the bar
+- "Back to suggested" for one note and "Reset my fingers" for the whole piece
+- Export MusicXML 4.0 with `<fingering>` for every note: piano part on two staves, voices, ties across barlines, pickups, triplets, tempo and section marks; hand-played MIDI timing is rounded to a 1/24-beat grid
+- One bar of count-in before *In tempo*, with a large on-screen count; metronome for *In tempo* and *Listen* with an accented downbeat, scheduled on the audio clock
+- Keyboard profile: 25 to 88 keys, or detected from the MIDI device name; controllers up to 49 keys are drawn key for key at the best octave, keys and lanes beyond the controller are shaded, and pieces that do not fit are flagged in the library and while practising
+- Record your playing (MIDI keyboard, computer keys or on-screen keys, with the sustain pedal), listen back, save as `.mid`
+- Settings popover grouped into This piece, Sound, Keyboard, Display
+- Library pieces are parsed afresh on every open, so edits never leak between visits
+
 ## v0.1.0 — 2026-10-25
 
 First public release.

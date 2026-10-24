@@ -5,6 +5,11 @@
  * Position is in beats. In "learn" mode time stops on the next note group until
  * every note in it is played; a note played before its bar reaches the
  * keyboard is accepted at once and the bars catch up smoothly (no jump).
+ *
+ * In "tempo" mode an optional count-in of one bar precedes the range, and the
+ * metronome (tempo and listen modes) clicks on every beat. Clicks are handed
+ * to the synth slightly ahead with their exact delay, so they do not jitter
+ * with the frame rate.
  */
 import { bpmAt, groupByOnset, type Hand, type NoteGroup, type Score, type ScoreNote } from '../score/model';
 
@@ -24,6 +29,13 @@ export interface EngineEvents {
   octaveHint(pressed: number, wanted: number): void;
   finished(summary: Summary): void;
   change(): void;
+  /** metronome click `delay` seconds from now; `accent` on the first beat of a bar */
+  tick(delay: number, accent: boolean): void;
+}
+
+interface Click {
+  t: number;
+  accent: boolean;
 }
 
 export interface Summary {
@@ -37,6 +49,7 @@ const LEAD = 2; // beats of lead-in before the range starts
 const HIT_WIN = 0.45; // beats, "in tempo" mode
 const EARLY = 0.6; // beats: when a press starts the lesson, jump this close to the note
 const CATCH_UP = 5; // speed multiplier while bars catch up after an early press
+const CLICK_AHEAD = 0.12; // seconds: metronome clicks are scheduled this far ahead
 
 export class Engine {
   score: Score;
@@ -45,6 +58,10 @@ export class Engine {
   hand: HandSel = 'R';
   loop = true;
   anyOctave = true;
+  /** one bar of clicks before the range in tempo mode */
+  countIn = true;
+  /** click every beat in tempo and listen modes */
+  metronome = false;
 
   pos = 0;
   playing = false;
@@ -64,6 +81,8 @@ export class Engine {
   keys = new Map<number, 'user' | 'auto'>();
   private catchUpTo = -Infinity;
   private autoTimers: ReturnType<typeof setTimeout>[] = [];
+  private clicks: Click[] = [];
+  private nextClick = 0;
 
   constructor(score: Score, private ev: EngineEvents) {
     this.score = score;
@@ -113,12 +132,91 @@ export class Engine {
     this.restart();
   }
 
+  setMetronome(on: boolean): void {
+    this.metronome = on;
+    this.buildClicks();
+  }
+
+  setCountIn(on: boolean): void {
+    this.countIn = on;
+    if (this.mode === 'tempo') this.restart();
+  }
+
+  /* ---------- beats, count-in, metronome ---------- */
+
+  /** Length of one metronome beat in quarter notes: dotted quarter in 6/8, 9/8, 12/8. */
+  beatUnit(): number {
+    const [num, den] = this.score.timeSig;
+    return den === 8 && num % 3 === 0 && num > 3 ? 1.5 : 4 / den;
+  }
+
+  /** One full bar of the piece's time signature, in beats. */
+  barBeats(): number {
+    const [num, den] = this.score.timeSig;
+    return (num * 4) / den;
+  }
+
+  private get counting(): boolean {
+    return this.mode === 'tempo' && this.countIn;
+  }
+
+  /** Beats before the range starts: a bar of count-in, or a short lead-in. */
+  leadBeats(): number {
+    return this.counting ? this.barBeats() : LEAD;
+  }
+
+  /** During the count-in: which beat (1-based) and how far into it, else null. */
+  countInBeat(): { beat: number; of: number; frac: number } | null {
+    if (!this.counting || !this.playing) return null;
+    const start = this.range[0];
+    const lead = this.barBeats();
+    if (this.pos >= start || this.pos < start - lead) return null;
+    const unit = this.beatUnit();
+    const x = (this.pos - (start - lead)) / unit;
+    return { beat: Math.floor(x + 1e-6) + 1, of: Math.round(lead / unit), frac: x - Math.floor(x + 1e-6) };
+  }
+
+  /** Click positions for the current range: count-in, then every beat when the metronome is on. */
+  private buildClicks(): void {
+    const out: Click[] = [];
+    const [start, end] = this.range;
+    const unit = this.beatUnit();
+    if (this.counting) {
+      const n = Math.max(1, Math.round(this.barBeats() / unit));
+      for (let k = 0; k < n; k++) out.push({ t: start - this.barBeats() + k * unit, accent: k === 0 });
+    }
+    if (this.metronome && this.mode !== 'learn') {
+      const nominal = this.barBeats();
+      this.score.measures.forEach((m, i) => {
+        if (m.t + m.beats <= start + 1e-6 || m.t >= end - 1e-6) return;
+        const beats: Click[] = [];
+        if (i === 0 && m.beats < nominal - 1e-6) {
+          // pickup bar: its beats are the last ones of a full bar, no accent
+          for (let b = m.t + m.beats - unit; b >= m.t - 1e-6; b -= unit) beats.unshift({ t: b, accent: false });
+        } else for (let k = 0; m.t + k * unit < m.t + m.beats - 1e-6; k++) beats.push({ t: m.t + k * unit, accent: k === 0 });
+        for (const c of beats) if (c.t >= start - 1e-6 && c.t < end - 1e-6) out.push(c);
+      });
+    }
+    this.clicks = out.sort((a, b) => a.t - b.t);
+    this.nextClick = this.clicks.findIndex((c) => c.t >= this.pos - 1e-6);
+    if (this.nextClick < 0) this.nextClick = this.clicks.length;
+  }
+
+  private scheduleClicks(np: number, beatsPerSec: number): void {
+    if (this.mode === 'learn' || beatsPerSec <= 0) return;
+    const horizon = np + CLICK_AHEAD * beatsPerSec;
+    while (this.nextClick < this.clicks.length && this.clicks[this.nextClick].t <= horizon) {
+      const c = this.clicks[this.nextClick++];
+      this.ev.tick(Math.max(0, (c.t - np) / beatsPerSec), c.accent);
+    }
+  }
+
   /* ---------- transport ---------- */
 
   restart(keepPlaying = false): void {
     this.clearAuto();
     const [start] = this.range;
-    this.pos = start - LEAD;
+    this.pos = start - this.leadBeats();
     this.catchUpTo = -Infinity;
     this.waiting = false;
     this.finished = false;
@@ -126,6 +224,7 @@ export class Engine {
     for (const g of this.groups) if (g.t >= start - 1e-6) for (const n of g.notes) this.state.set(n, 0);
     for (const [p, src] of [...this.keys]) if (src === 'auto') this.keys.delete(p);
     if (!keepPlaying) this.playing = false;
+    this.buildClicks();
     this.ev.change();
   }
 
@@ -279,6 +378,7 @@ export class Engine {
         }
       }
     }
+    this.scheduleClicks(np, bps * this.speed);
     this.pos = np;
 
     if (this.pos >= end) {

@@ -1,11 +1,13 @@
 /** Application shell: settings, language, audio, MIDI, file import and navigation between screens. */
 import { libraryScore } from './library';
 import { importFile, scoreFromStored } from './importer';
-import { applyI18n, detectLang, setLang, t, type NameStyle } from './i18n';
+import { applyI18n, detectLang, keysLabel, setLang, t, type NameStyle } from './i18n';
 import { startMidi, type MidiStatus } from './input/midi';
+import { guessSize, presetRange, type KeyboardSize, type KeyRange } from './input/profile';
 import { Synth } from './audio/synth';
+import { applyEdits } from './score/edits';
 import type { Score } from './score/model';
-import { getFile, requestPersistence, touchFile, type FileKind } from './storage/files';
+import { getFile, getFingerings, requestPersistence, touchFile, type FileKind } from './storage/files';
 import { loadPieceSettings, loadSettings, saveSettings, type Lang, type Settings } from './storage/settings';
 import { $, toast } from './ui/dom';
 import { HomeView } from './ui/home';
@@ -44,11 +46,20 @@ export class App {
         this.practice.noteOn(p, v);
       },
       noteOff: (p) => this.practice.noteOff(p),
-      sustain: (on) => this.synth.setSustain(on),
+      sustain: (on) => {
+        this.synth.setSustain(on);
+        this.practice.sustain(on);
+      },
       status: (s) => {
         this.midi = s;
-        this.renderMidiStatus();
+        // the controller's name may give its size away: refresh the fit badges and the on-screen keyboard
+        if (!$('home').hidden) this.home.render();
+        else this.renderMidiStatus();
+        if (this.settings.keyboard === 'auto') this.practice.applyProfile();
       },
+    });
+    addEventListener('beforeunload', (e) => {
+      if (this.practice.hasUnsavedTake()) e.preventDefault();
     });
 
     const unlock = () => this.synth.unlock();
@@ -90,6 +101,29 @@ export class App {
     return this.lang === 'ru' ? 'solfege' : 'letters';
   }
 
+  /* ---------- keyboard profile ---------- */
+
+  /** Size and name of the connected controller when its name gives the key count away. */
+  detectedKeyboard(): { size: KeyboardSize; name: string } | null {
+    if (this.midi.kind !== 'connected') return null;
+    for (const name of this.midi.names) {
+      const size = guessSize([name]);
+      if (size) return { size, name };
+    }
+    return null;
+  }
+
+  /** The player's controller size: chosen in Settings, or detected; null means just fit the piece. */
+  keyboardSize(): KeyboardSize | null {
+    const k = this.settings.keyboard;
+    return k === 'auto' ? (this.detectedKeyboard()?.size ?? null) : k;
+  }
+
+  keyboardRange(): KeyRange | null {
+    const size = this.keyboardSize();
+    return size ? presetRange(size) : null;
+  }
+
   /* ---------- MIDI status ---------- */
 
   renderMidiStatus(): void {
@@ -100,11 +134,13 @@ export class App {
     let full = '';
     let short = '';
     switch (s.kind) {
-      case 'connected':
+      case 'connected': {
         cls = 'ok';
-        full = t('midi.connected', { names: s.names.join(', ') });
+        const size = this.keyboardSize();
+        full = t('midi.connected', { names: s.names.join(', ') }) + (size ? ` · ${keysLabel(+size)}` : '');
         short = s.names.join(', ');
         break;
+      }
       case 'none':
         cls = 'warn';
         full = t('midi.none');
@@ -134,9 +170,9 @@ export class App {
 
   /* ---------- opening pieces ---------- */
 
-  openLibrary(id: string): void {
+  openLibrary(id: string): Promise<void> {
     const score = libraryScore(id);
-    this.show(score, { id, source: 'library' });
+    return this.show(score, { id, source: 'library' });
   }
 
   async openStored(id: string): Promise<void> {
@@ -149,7 +185,7 @@ export class App {
       const split = loadPieceSettings(id).split ?? this.settings.midiSplit;
       const score = scoreFromStored(f, split);
       void touchFile(id);
-      this.show(score, { id, source: 'file', kind: f.kind });
+      await this.show(score, { id, source: 'file', kind: f.kind });
     } catch (e) {
       toast(t('open.failed', { name: f.name, reason: (e as Error).message }), { error: true });
     }
@@ -159,7 +195,7 @@ export class App {
     toast(t('open.reading', { name: file.name }), { ms: 1500 });
     try {
       const { score, stored } = await importFile(file, this.settings.midiSplit);
-      this.show(score, { id: stored.id, source: 'file', kind: stored.kind });
+      await this.show(score, { id: stored.id, source: 'file', kind: stored.kind });
       const auto = score.notes.some((n) => n.fingerSource === 'auto');
       toast(`${t('storage.saved')}${auto ? ' · ' + t('hint.fingersAuto') : ''}`, { ms: 3500 });
     } catch (e) {
@@ -168,13 +204,16 @@ export class App {
     }
   }
 
-  private show(score: Score, info: PieceInfo): void {
+  /** Open the practice screen with the player's finger edits for this piece applied. */
+  private async show(score: Score, info: PieceInfo): Promise<void> {
+    const edits = await getFingerings(info.id);
+    applyEdits(score, edits);
     this.current = info;
     this.settings.lastPieceId = info.id;
     this.save();
     $('home').hidden = true;
     $('practice').hidden = false;
-    this.practice.open(score, info);
+    this.practice.open(score, info, edits);
   }
 
   showHome(): void {

@@ -77,7 +77,7 @@ export const dict = {
     'hint.done': 'Done: {hits} correct, {wrong} wrong{missed}.',
     'hint.doneMissed': ', {misses} missed',
     'hint.sectionDone': 'Bars {from}–{to} done: {hits} correct, {wrong} wrong{missed}.',
-    'hint.fingersAuto': 'Fingering was computed automatically.',
+    'hint.fingersAuto': 'Fingering was computed automatically. Click a bar to change a finger.',
     'finger.1': 'thumb',
     'finger.2': 'index',
     'finger.3': 'middle',
@@ -107,6 +107,48 @@ export const dict = {
     'audio.unlock': 'Click or tap the page once to enable sound.',
     'continue': 'continue',
     'storage.saved': 'Saved in this browser',
+    'metronome': 'Metronome: clicks every beat in In tempo and Listen',
+    'record': 'Record your playing',
+    'record.stop': 'Stop recording',
+    'take.recording': 'Recording · {time} · {n} notes',
+    'take.ready': 'Your recording · {time} · {n} notes',
+    'take.stop': 'Stop',
+    'take.play': 'Listen',
+    'take.stopPlay': 'Stop',
+    'take.save': 'Save .mid',
+    'take.discard': 'Discard',
+    'take.discardConfirm': 'Discard this recording? It has not been saved.',
+    'take.replaceConfirm': 'Start a new recording? The previous one has not been saved.',
+    'take.empty': 'Nothing was recorded: no keys were played.',
+    'file.saved': 'Saved {name}',
+    'picker.label': 'Finger for this note',
+    'picker.head': '{note} · bar {m}',
+    'picker.src.auto': 'suggested automatically',
+    'picker.src.file': 'from the file',
+    'picker.src.user': 'your choice',
+    'picker.reset': 'Back to suggested',
+    'picker.keys': 'or press 1–5',
+    'hint.fingerSet': 'Finger {f} ({fname}) kept for this piece',
+    'hint.fingerReset': 'Back to the suggested finger',
+    'legend.edit': 'click a bar to change its finger',
+    'settings.sect.piece': 'This piece',
+    'settings.sect.sound': 'Sound',
+    'settings.sect.keyboard': 'Keyboard',
+    'settings.sect.display': 'Display',
+    'settings.export': 'Export MusicXML with fingering',
+    'settings.resetFingers': 'Reset my fingers ({n})',
+    'settings.resetFingersConfirm': 'Forget the fingers you chose in this piece ({n})?',
+    'settings.countIn': 'Count-in bar before In tempo',
+    'settings.keyboard': 'My keyboard',
+    'settings.keyboard.auto': 'auto: {what}',
+    'settings.keyboard.fit': 'fit to the piece',
+    'keys': '{n} keys',
+    'keys.one': '{n} key',
+    'kb.noFit': 'This needs {need}, your keyboard has {keys}. Notes beyond it are shaded: {fix}',
+    'kb.fix.anyOctave': 'play them in any octave, it counts.',
+    'kb.fix.octave': 'use OCTAVE as you go, or turn on “any octave” in Settings.',
+    'kb.needs': 'needs {keys}',
+    'kb.needsTitle': 'Does not fit your {keys} at any octave',
   },
   ru: {
     'app.tagline': 'Бесплатный тренажёр для MIDI-клавиатуры',
@@ -184,7 +226,7 @@ export const dict = {
     'hint.done': 'Готово: верно {hits}, ошибок {wrong}{missed}.',
     'hint.doneMissed': ', пропущено {misses}',
     'hint.sectionDone': 'Такты {from}–{to} пройдены: верно {hits}, ошибок {wrong}{missed}.',
-    'hint.fingersAuto': 'Аппликатура расставлена автоматически.',
+    'hint.fingersAuto': 'Аппликатура расставлена автоматически. Нажмите на полоску, чтобы сменить палец.',
     'finger.1': 'большой',
     'finger.2': 'указательный',
     'finger.3': 'средний',
@@ -214,6 +256,49 @@ export const dict = {
     'audio.unlock': 'Нажмите на страницу один раз, чтобы включить звук.',
     'continue': 'продолжить',
     'storage.saved': 'Сохранено в этом браузере',
+    'metronome': 'Метроном: щелчок на каждую долю в режимах «В темпе» и «Послушать»',
+    'record': 'Записать свою игру',
+    'record.stop': 'Остановить запись',
+    'take.recording': 'Идёт запись · {time} · нажатий: {n}',
+    'take.ready': 'Ваша запись · {time} · нажатий: {n}',
+    'take.stop': 'Стоп',
+    'take.play': 'Прослушать',
+    'take.stopPlay': 'Стоп',
+    'take.save': 'Сохранить .mid',
+    'take.discard': 'Удалить',
+    'take.discardConfirm': 'Удалить запись? Она не сохранена.',
+    'take.replaceConfirm': 'Начать новую запись? Предыдущая не сохранена.',
+    'take.empty': 'Ничего не записано: не было нажатий.',
+    'file.saved': 'Сохранено: {name}',
+    'picker.label': 'Палец для этой ноты',
+    'picker.head': '{note} · такт {m}',
+    'picker.src.auto': 'предложен автоматически',
+    'picker.src.file': 'из файла',
+    'picker.src.user': 'ваш выбор',
+    'picker.reset': 'Вернуть предложенный',
+    'picker.keys': 'или клавиши 1–5',
+    'hint.fingerSet': 'Палец {f} ({fname}) сохранён для этой пьесы',
+    'hint.fingerReset': 'Вернул предложенный палец',
+    'legend.edit': 'нажмите на полоску, чтобы сменить палец',
+    'settings.sect.piece': 'Эта пьеса',
+    'settings.sect.sound': 'Звук',
+    'settings.sect.keyboard': 'Клавиатура',
+    'settings.sect.display': 'Отображение',
+    'settings.export': 'Экспорт в MusicXML с аппликатурой',
+    'settings.resetFingers': 'Сбросить мои пальцы ({n})',
+    'settings.resetFingersConfirm': 'Забыть пальцы, которые вы выбрали в этой пьесе ({n})?',
+    'settings.countIn': 'Отсчёт такта перед игрой «В темпе»',
+    'settings.keyboard': 'Моя клавиатура',
+    'settings.keyboard.auto': 'авто: {what}',
+    'settings.keyboard.fit': 'по пьесе',
+    'keys': '{n} клавиш',
+    'keys.one': '{n} клавиша',
+    'keys.few': '{n} клавиши',
+    'kb.noFit': 'Нужно {need}, на вашей клавиатуре {keys}. Ноты за её краем затемнены: {fix}',
+    'kb.fix.anyOctave': 'играйте их в любой октаве, засчитается.',
+    'kb.fix.octave': 'переключайте OCTAVE по ходу пьесы или включите «любую октаву» в настройках.',
+    'kb.needs': 'нужно {keys}',
+    'kb.needsTitle': 'Не помещается на ваши {keys} ни в одной октаве',
   },
 } as const;
 
@@ -277,16 +362,26 @@ export function applyI18n(root: ParentNode = document): void {
   });
 }
 
-/** "{n} bars" with Russian plural forms. */
-export function barsLabel(n: number): string {
+/** A count with plural forms: `base` for many, `base.one`, and in Russian `base.few`. */
+function plural(base: 'piece.bars' | 'keys', n: number): string {
   const table = dict[current] as Record<string, string>;
   const mod10 = n % 10;
   const mod100 = n % 100;
-  let key: Key = 'piece.bars';
+  let key = base as string;
   if (current === 'ru') {
-    if (mod10 === 1 && mod100 !== 11) key = 'piece.bars.one';
-    else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) key = 'piece.bars.few' as Key;
-  } else if (n === 1) key = 'piece.bars.one';
-  if (!table[key]) key = 'piece.bars';
-  return t(key, { n });
+    if (mod10 === 1 && mod100 !== 11) key = `${base}.one`;
+    else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) key = `${base}.few`;
+  } else if (n === 1) key = `${base}.one`;
+  if (!table[key]) key = base;
+  return t(key as Key, { n });
+}
+
+/** "{n} bars" with Russian plural forms. */
+export function barsLabel(n: number): string {
+  return plural('piece.bars', n);
+}
+
+/** "{n} keys" with Russian plural forms. */
+export function keysLabel(n: number): string {
+  return plural('keys', n);
 }

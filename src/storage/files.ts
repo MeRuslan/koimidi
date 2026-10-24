@@ -1,8 +1,11 @@
 /**
  * Imported files are kept in IndexedDB (database "koimidi", store "files"),
  * keyed by the SHA-256 of their bytes so re-importing the same file never
- * creates a duplicate. Everything stays in this browser.
+ * creates a duplicate. The user's finger edits live in the "fingerings" store
+ * under the same id (or the library slug). Everything stays in this browser.
  */
+import type { FingerEdits } from '../score/edits';
+
 export type FileKind = 'midi' | 'musicxml' | 'mxl';
 
 export interface StoredFile {
@@ -17,12 +20,23 @@ export interface StoredFile {
   composer?: string;
   measures: number;
   hands: { R: boolean; L: boolean };
+  /** Lowest and highest pitch, for the keyboard-fit badge (absent on files stored by v0.1). */
+  low?: number;
+  high?: number;
 }
 
 export type StoredFileMeta = Omit<StoredFile, 'bytes'>;
 
+interface StoredFingerings {
+  id: string;
+  edits: FingerEdits;
+  updatedAt: number;
+}
+
 const DB = 'koimidi';
 const STORE = 'files';
+const FINGERS = 'fingerings';
+type StoreName = typeof STORE | typeof FINGERS;
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -30,27 +44,32 @@ function open(): Promise<IDBDatabase> {
       reject(new Error('IndexedDB unavailable'));
       return;
     }
-    const req = indexedDB.open(DB, 1);
+    const req = indexedDB.open(DB, 2);
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) {
         const st = db.createObjectStore(STORE, { keyPath: 'id' });
         st.createIndex('openedAt', 'openedAt');
       }
+      if (!db.objectStoreNames.contains(FINGERS)) db.createObjectStore(FINGERS, { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error('IndexedDB failed'));
   });
 }
 
-function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBRequest<T> | void): Promise<T> {
+function tx<T>(
+  mode: IDBTransactionMode,
+  fn: (store: IDBObjectStore, t: IDBTransaction) => IDBRequest<T> | void,
+  stores: StoreName | StoreName[] = STORE,
+): Promise<T> {
   return open().then(
     (db) =>
       new Promise<T>((resolve, reject) => {
-        const t = db.transaction(STORE, mode);
-        const store = t.objectStore(STORE);
+        const t = db.transaction(stores, mode);
+        const store = t.objectStore(Array.isArray(stores) ? stores[0] : stores);
         let result: T | undefined;
-        const req = fn(store);
+        const req = fn(store, t);
         if (req) req.onsuccess = () => (result = req.result);
         t.oncomplete = () => {
           db.close();
@@ -96,7 +115,33 @@ export async function touchFile(id: string): Promise<void> {
 }
 
 export async function deleteFile(id: string): Promise<void> {
-  await tx('readwrite', (s) => s.delete(id));
+  await tx(
+    'readwrite',
+    (s, t) => {
+      s.delete(id);
+      t.objectStore(FINGERS).delete(id);
+    },
+    [STORE, FINGERS],
+  );
+}
+
+/** The user's finger edits for a piece (file hash or library slug); empty when none or storage is unavailable. */
+export async function getFingerings(id: string): Promise<FingerEdits> {
+  try {
+    const rec = await tx<StoredFingerings | undefined>('readonly', (s) => s.get(id), FINGERS);
+    return rec?.edits ?? {};
+  } catch {
+    return {};
+  }
+}
+
+export async function putFingerings(id: string, edits: FingerEdits): Promise<void> {
+  try {
+    if (Object.keys(edits).length) await tx('readwrite', (s) => s.put({ id, edits: { ...edits }, updatedAt: Date.now() }), FINGERS);
+    else await tx('readwrite', (s) => s.delete(id), FINGERS);
+  } catch {
+    /* storage unavailable: edits last for this visit only */
+  }
 }
 
 /** Ask the browser not to evict our data under storage pressure. Best effort. */

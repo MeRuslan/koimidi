@@ -20,6 +20,11 @@ Learning a melody without reading sheet music means you want three things at onc
 - **Your own sound.** A small WebAudio piano plays whatever you press, with sustain pedal support (CC 64), so a silent controller is enough.
 - **Open MIDI and MusicXML** (`.mid`, `.midi`, `.musicxml`, `.xml`, compressed `.mxl`). Parsing happens in the browser; files are kept in your browser's storage (IndexedDB) for next time.
 - **Automatic fingering** (right and left hand) for files that carry none, using a Parncutt-style ergonomic cost model and dynamic programming. Fingering from MusicXML `<fingering>` is kept.
+- **Your own fingering.** Click a bar and pick a finger (or press `1`–`5`). The choice is kept in this browser for that piece, the automatic fingering rearranges the notes around it, and a small dot marks the fingers you chose.
+- **Export MusicXML with fingering**, yours included, to print the piece or open it in MuseScore and other notation programs.
+- **Count-in and metronome.** *In tempo* starts after one bar of clicks; the metronome clicks every beat in *In tempo* and *Listen*.
+- **Keyboard profile.** Tell koimidi how many keys your controller has, or let it guess from the device name (Komplete Kontrol M32 → 32 keys). Controllers up to 49 keys appear on screen key for key, at the octave that suits the piece; pieces that need more keys are flagged in the library and while you practise.
+- **Record your playing** with the ● button, listen back, and save it as a `.mid` file.
 - **Loop any range of bars**, with section chips when the score has rehearsal marks.
 - **Any octave accepted** on small keyboards, with a hint about which way to press OCTAVE.
 - **Tempo from 20 % to 100 %**, right / left / both hands, note names as *do re mi* or *C D E*.
@@ -39,20 +44,21 @@ The site must be served over `https://` or opened from `localhost` / a local fil
 2. Pick a piece from the library or open your own `.mid` / `.musicxml` / `.mxl`.
 3. Press the highlighted key to start. In *Learn* mode nothing moves until you play the right note.
 4. Narrow the loop to a few bars (the **Bars** fields, the section chips, or `[` / `]` while playing), slow the tempo, repeat, widen.
-5. Switch to *In tempo* when it feels easy.
+5. A finger feels wrong? Click its bar and choose another one; the rest of the fingering adapts.
+6. Switch to *In tempo* when it feels easy, with the metronome if it helps. Record a take with ● to hear yourself.
 
-Shortcuts: `Space` start/pause · `Enter` restart · `[` `]` loop start/end at the current bar · `Z` `X` shift the computer-keyboard octave · `Esc` back to the library.
+Shortcuts: `Space` start/pause · `Enter` restart · `[` `]` loop start/end at the current bar · `Z` `X` shift the computer-keyboard octave · `1`–`5` finger for the selected bar · `Esc` back to the library.
 
 ## Privacy
 
-There is no account, no analytics and no network requests after the page loads. Imported files and settings are stored only in your browser (localStorage and IndexedDB); clearing site data removes them. Nothing is uploaded anywhere.
+There is no account, no analytics and no network requests after the page loads. Imported files, the fingers you chose and your settings are stored only in your browser (localStorage and IndexedDB); clearing site data removes them. Recordings stay in memory until you save them. Nothing is uploaded anywhere.
 
 ## Development
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # vitest: parsers, fingering, practice engine, library
+npm test           # vitest: parsers, MusicXML export, fingering, practice engine, recorder, library
 npm run build      # type-check + production build into dist/
 ```
 
@@ -60,12 +66,12 @@ Plain TypeScript + Vite, no UI framework. Layout of `src/`:
 
 | Folder | What lives there |
 | --- | --- |
-| `score/` | the score model, MIDI and MusicXML importers, the compact library notation, automatic fingering |
-| `practice/` | the practice engine: modes, waiting, hit windows, loop range, octave tolerance |
+| `score/` | the score model, MIDI and MusicXML importers, MusicXML export, the compact library notation, automatic fingering and the player's finger edits |
+| `practice/` | the practice engine (modes, waiting, hit windows, loop range, octave tolerance, count-in, metronome) and the recorder |
 | `render/` | the canvas renderer (falling bars, keyboard) |
 | `audio/` | the WebAudio synth |
-| `input/` | Web MIDI and computer-keyboard input |
-| `storage/` | settings in localStorage, files in IndexedDB |
+| `input/` | Web MIDI and computer-keyboard input, keyboard profiles |
+| `storage/` | settings in localStorage, files and finger edits in IndexedDB |
 | `library/` | built-in pieces |
 | `ui/` | home and practice screens |
 
@@ -90,7 +96,7 @@ L: C3/1:1 | G2/1:5 | C3/1 | G2/2 C3/2 |
 
 Every release starts with a session on a real controller (Komplete Kontrol M32, Chrome over https); what breaks there comes first.
 
-- **v0.2 — learn your own piece.** Edit a finger by clicking its bar; edits are kept in the browser per file and the automatic fingering works around them. Export MusicXML with `<fingering>`. Count-in and metronome for the in-tempo mode. Keyboard profile: your controller's range on screen and a warning when a piece does not fit it. Record your playing and export it as `.mid`.
+- **v0.2 — learn your own piece** (done). Edit a finger by clicking its bar; edits are kept in the browser per file and the automatic fingering works around them. Export MusicXML with `<fingering>`. Count-in and metronome for the in-tempo mode. Keyboard profile: your controller's range on screen and a warning when a piece does not fit it. Record your playing and export it as `.mid`.
 - **v0.3 — two hands for real.** Practise one hand while the trainer plays the other. Progress statistics per piece and per bar range. Offline use as a PWA.
 - **v0.4 — sound.** Sampled piano (Salamander Grand Piano as SF3 through SpessaSynth) and your own SoundFont packs (SF2/SF3). More public-domain pieces in the library.
 - **Deferred:** vector-PDF import in the browser, MIDI output to an external synth, scanned-sheet recognition (OMR).

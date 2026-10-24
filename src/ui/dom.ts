@@ -34,3 +34,19 @@ export function formatDuration(seconds: number): string {
   const s = Math.round(seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+/** A file name from a title: without the characters file systems reject. */
+export function safeFileName(title: string, ext: string): string {
+  const base = title.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'koimidi';
+  return `${base}.${ext}`;
+}
+
+/** Hand the browser a file to save. */
+export function download(name: string, data: BlobPart, type: string): void {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const a = el('a', { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}

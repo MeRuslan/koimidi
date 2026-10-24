@@ -12,6 +12,7 @@ function make(text = 'time: 4/4\ntempo: 120\nR: C4 D4 E4 F4 | G4 A4 B4 C5 | [C4 
     octaveHint: vi.fn(),
     finished: vi.fn(),
     change: vi.fn(),
+    tick: vi.fn(),
   };
   const e = new Engine(score, ev);
   e.speed = 1;
@@ -104,6 +105,7 @@ describe('engine: learn mode', () => {
 describe('engine: tempo mode', () => {
   it('counts misses when notes pass and hits inside the window', () => {
     const { e } = make();
+    e.countIn = false;
     e.setMode('tempo');
     e.loop = false;
     e.setPlaying(true);
@@ -155,5 +157,64 @@ describe('engine: range and loop', () => {
     expect(e.groups[0].notes.length).toBe(2);
     e.setHand('L');
     expect(e.groups.length).toBe(1);
+  });
+});
+
+describe('engine: count-in and metronome', () => {
+  const run = (e: Engine, seconds: number) => {
+    for (let i = 0; i < seconds * 60; i++) e.step(1 / 60);
+  };
+
+  it('counts in one bar before the range in tempo mode', () => {
+    const { e, ev } = make();
+    e.setMode('tempo');
+    expect(e.pos).toBe(-4); // one 4/4 bar of count-in
+    e.setPlaying(true);
+    expect(e.countInBeat()).toEqual({ beat: 1, of: 4, frac: 0 });
+    run(e, 0.75); // 120 bpm: 1.5 beats
+    expect(e.countInBeat()?.beat).toBe(2);
+    run(e, 1.3);
+    expect(e.countInBeat()).toBeNull();
+    const ticks = (ev.tick as ReturnType<typeof vi.fn>).mock.calls;
+    expect(ticks).toHaveLength(4);
+    expect(ticks.map((c) => c[1])).toEqual([true, false, false, false]);
+    for (const [delay] of ticks) expect(delay).toBeLessThanOrEqual(0.12 + 1e-9);
+  });
+
+  it('no count-in when switched off: a short lead-in as before', () => {
+    const { e } = make();
+    e.setMode('tempo');
+    e.setCountIn(false);
+    expect(e.pos).toBe(-2);
+  });
+
+  it('metronome clicks every beat with the downbeat accented, only in the range', () => {
+    const { e, ev } = make();
+    e.setMode('tempo');
+    e.setCountIn(false);
+    e.setMetronome(true);
+    e.loop = false;
+    e.setRangeMeasures(2, 2);
+    e.setPlaying(true);
+    run(e, 4);
+    const ticks = (ev.tick as ReturnType<typeof vi.fn>).mock.calls;
+    expect(ticks.map((c) => c[1])).toEqual([true, false, false, false]);
+  });
+
+  it('6/8 clicks on dotted quarters; learn mode never clicks', () => {
+    const { e, ev } = make('time: 6/8\ntempo: 120\nR: C4/8 D4 E4 F4 G4 A4 | C5/4. C5 |');
+    expect(e.beatUnit()).toBe(1.5);
+    e.setMetronome(true);
+    e.setPlaying(true);
+    e.press(60);
+    run(e, 2);
+    expect(ev.tick).not.toHaveBeenCalled();
+    e.setMode('tempo');
+    e.loop = false;
+    e.setPlaying(true);
+    run(e, 6);
+    const ticks = (ev.tick as ReturnType<typeof vi.fn>).mock.calls;
+    // count-in bar, then two bars
+    expect(ticks.map((c) => c[1])).toEqual([true, false, true, false, true, false]);
   });
 });

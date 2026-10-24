@@ -2,6 +2,7 @@
  * Settings live in localStorage under "koimidi:" keys (the site may share an
  * origin with other github.io pages, so every key is prefixed).
  */
+import type { KeyboardChoice } from '../input/profile';
 import type { HandSel, Mode } from '../practice/engine';
 import type { MidiSplit } from '../score/midi';
 
@@ -19,6 +20,12 @@ export interface Settings {
   anyOctave: boolean;
   noteNames: NoteNames;
   midiSplit: MidiSplit;
+  /** metronome clicks in tempo and listen modes */
+  metronome: boolean;
+  /** one bar of count-in before the range in tempo mode */
+  countIn: boolean;
+  /** the player's controller: a key count, or detect from the device name */
+  keyboard: KeyboardChoice;
   lastPieceId?: string;
 }
 
@@ -44,6 +51,9 @@ export const DEFAULT_SETTINGS: Settings = {
   anyOctave: true,
   noteNames: 'auto',
   midiSplit: 'auto',
+  metronome: false,
+  countIn: true,
+  keyboard: 'auto',
 };
 
 function read<T>(key: string): T | null {

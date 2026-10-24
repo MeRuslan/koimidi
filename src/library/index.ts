@@ -1,5 +1,5 @@
 import { autoFinger } from '../score/fingering';
-import type { Score } from '../score/model';
+import { pitchSpan, type Score } from '../score/model';
 import { parseNotation } from '../score/notation';
 import { PIECES } from './pieces';
 
@@ -13,19 +13,16 @@ export interface LibraryItem {
   measures: number;
   hands: { R: boolean; L: boolean };
   seconds: number;
+  low?: number;
+  high?: number;
 }
 
-const cache = new Map<string, Score>();
-
+/** A fresh copy of a library piece each time: finger edits change notes in place. */
 export function libraryScore(id: string): Score {
-  let s = cache.get(id);
-  if (!s) {
-    const entry = PIECES.find((p) => p.id === id);
-    if (!entry) throw new Error(`Unknown library piece ${id}`);
-    s = parseNotation(entry.text, id).score;
-    autoFinger(s);
-    cache.set(id, s);
-  }
+  const entry = PIECES.find((p) => p.id === id);
+  if (!entry) throw new Error(`Unknown library piece ${id}`);
+  const s = parseNotation(entry.text, id).score;
+  autoFinger(s);
   return s;
 }
 
@@ -42,6 +39,7 @@ export function libraryItems(): LibraryItem[] {
       measures: score.measures.length,
       hands: score.hands,
       seconds: (score.end * 60) / score.tempo[0].bpm,
+      ...pitchSpan(score),
     };
   });
 }

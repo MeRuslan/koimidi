@@ -3,6 +3,7 @@
  * keyboard sits; colour = finger, number on the leading edge.
  */
 import { keyLabel, t, type NameStyle } from '../i18n';
+import { keyCount, MIRROR_MAX_KEYS, placeRange, type KeyRange, type Placement } from '../input/profile';
 import { bpmAt, isBlackKey, type Score, type ScoreNote } from '../score/model';
 import type { Engine, FlashKind } from '../practice/engine';
 
@@ -29,6 +30,13 @@ export interface KeyRect {
   black: boolean;
 }
 
+interface BarRect {
+  x: number;
+  w: number;
+  top: number;
+  bot: number;
+}
+
 export class Stage {
   private ctx: CanvasRenderingContext2D;
   w = 0;
@@ -41,6 +49,13 @@ export class Stage {
   wk = 0;
   nameStyle: NameStyle = 'letters';
   reduceMotion = false;
+  /** The player's controller (keyboard profile), or null to just fit the piece. */
+  profile: KeyRange | null = null;
+  /** Where the controller sits for the current piece and hand. */
+  placement: Placement | null = null;
+  /** Note whose finger is being edited: drawn with a dashed outline. */
+  selected: ScoreNote | null = null;
+  private ppb = 1;
   private flashes: Flash[] = [];
   private ripples: Ripple[] = [];
   private engine: Engine | null = null;
@@ -61,10 +76,25 @@ export class Stage {
     this.resize();
   }
 
-  /** Keyboard range: the practised notes plus some margin, at least two octaves. */
+  /**
+   * Keyboard range. With a small controller: exactly its keys at the octave
+   * that suits the piece (plus any notes that do not fit). Otherwise the
+   * practised notes plus some margin, at least two octaves.
+   */
   fitRange(): void {
     if (!this.engine) return;
     const pitches = this.engine.activeNotes.map((n) => n.pitch);
+    this.placement = this.profile ? placeRange(this.profile, pitches) : null;
+    if (this.profile && this.placement && keyCount(this.profile) <= MIRROR_MAX_KEYS) {
+      let lo = Math.min(this.placement.low, ...pitches);
+      let hi = Math.max(this.placement.high, ...pitches);
+      while (isBlackKey(lo)) lo--;
+      while (isBlackKey(hi)) hi++;
+      this.low = Math.max(0, lo);
+      this.high = Math.min(127, hi);
+      this.resize();
+      return;
+    }
     let lo = pitches.length ? Math.min(...pitches) - 2 : 55;
     let hi = pitches.length ? Math.max(...pitches) + 2 : 79;
     while (isBlackKey(lo)) lo--;
@@ -103,6 +133,53 @@ export class Stage {
     const i = this.whites.indexOf(p - 1);
     const bw = this.wk * 0.6;
     return { x: (i + 1) * this.wk - bw / 2, w: bw, black: true };
+  }
+
+  /** Is the key outside the player's controller as placed for this piece? */
+  outsideController(p: number): boolean {
+    const pl = this.placement;
+    return !!pl && (p < pl.low || p > pl.high);
+  }
+
+  /** Where a note's bar is drawn at the given scroll, or null when off screen. */
+  private barRect(n: ScoreNote, pos: number): BarRect | null {
+    const yb = this.waterY - (n.t - pos) * this.ppb;
+    const yt = yb - n.dur * this.ppb;
+    if (yb < -10 || yt > this.waterY) return null;
+    if (n.pitch < this.low || n.pitch > this.high) return null;
+    const r = this.keyRect(n.pitch);
+    if (r.x < -r.w || r.x > this.w) return null;
+    const inset = r.black ? 2 : 4;
+    const top = Math.max(yt + 2, -10);
+    const bot = Math.min(yb - 2, this.waterY);
+    if (bot <= top) return null;
+    return { x: r.x + inset, w: r.w - inset * 2, top, bot };
+  }
+
+  /** The bar under a canvas point (above the keyboard), shortest first when bars overlap. */
+  noteAt(x: number, y: number): ScoreNote | null {
+    const e = this.engine;
+    if (!e || y >= this.waterY) return null;
+    let best: ScoreNote | null = null;
+    let bestH = Infinity;
+    for (const n of e.activeNotes) {
+      const r = this.barRect(n, e.pos);
+      if (!r) continue;
+      if (x < r.x - 3 || x > r.x + r.w + 3 || y < r.top - 3 || y > r.bot + 3) continue;
+      const h = r.bot - r.top;
+      if (h < bestH) {
+        best = n;
+        bestH = h;
+      }
+    }
+    return best;
+  }
+
+  /** Centre of a note's bar on screen, for anchoring the finger picker. */
+  barAnchor(n: ScoreNote): { x: number; y: number } | null {
+    const e = this.engine;
+    const r = e ? this.barRect(n, e.pos) : null;
+    return r ? { x: r.x + r.w / 2, y: Math.max(r.top, Math.min(r.bot, this.waterY - 24)) } : null;
   }
 
   /** Pitch under a canvas point, or null when the point is above the keyboard. */
@@ -160,7 +237,19 @@ export class Stage {
       return;
     }
     const ppb = (waterY - 70) / this.visibleBeats();
+    this.ppb = ppb;
     const yOf = (beat: number) => waterY - (beat - e.pos) * ppb;
+
+    // lanes outside the player's controller: dim
+    const pl = this.placement;
+    if (pl && (this.low < pl.low || this.high > pl.high)) {
+      ctx.fillStyle = 'rgba(2, 8, 14, 0.4)';
+      const left = this.keyRect(Math.max(this.low, pl.low)).x;
+      const hiKey = Math.min(this.high, pl.high);
+      const right = this.keyRect(hiKey).x + this.keyRect(hiKey).w;
+      if (left > 0) ctx.fillRect(0, 0, left, waterY);
+      if (right < w) ctx.fillRect(right, 0, w - right, waterY);
+    }
 
     // outside the loop range: dim
     const [rs, re] = e.range;
@@ -210,17 +299,9 @@ export class Stage {
     const notes = e.activeNotes;
     const both = e.hand === 'both';
     for (const n of notes) {
-      const yb = yOf(n.t);
-      const yt = yb - n.dur * ppb;
-      if (yb < -10 || yt > waterY) continue;
-      const r = this.keyRect(n.pitch);
-      if (r.x < -r.w || r.x > w) continue;
-      const inset = r.black ? 2 : 4;
-      const x = r.x + inset;
-      const bw = r.w - inset * 2;
-      const top = Math.max(yt + 2, -10);
-      const bot = Math.min(yb - 2, waterY);
-      if (bot <= top) continue;
+      const br = this.barRect(n, e.pos);
+      if (!br) continue;
+      const { x, w: bw, top, bot } = br;
       const state = e.noteState(n);
       let col = n.finger ? FINGER_COLORS[n.finger] : NO_FINGER;
       let alpha = 1;
@@ -242,6 +323,14 @@ export class Stage {
         ctx.strokeStyle = '#ffffff';
         ctx.stroke();
       }
+      if (n === this.selected) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#ffffff';
+        ctx.setLineDash([4, 3]);
+        rr(ctx, x - 3, top - 3, bw + 6, bot - top + 6, 8);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       if (n.finger && bot - top > 16 && bw > 12) {
         ctx.fillStyle = 'rgba(4, 17, 29, 0.85)';
         const fs = Math.min(18, Math.max(11, bw * 0.45));
@@ -249,6 +338,13 @@ export class Stage {
         ctx.textAlign = 'center';
         ctx.fillText(String(n.finger), x + bw / 2, bot - 6);
         ctx.textAlign = 'left';
+      }
+      if (n.fingerSource === 'user' && bot - top > 12 && bw > 10) {
+        // the player's own choice: a small dot in the corner
+        ctx.fillStyle = 'rgba(4, 17, 29, 0.85)';
+        ctx.beginPath();
+        ctx.arc(x + bw - 5, top + 5, 3, 0, Math.PI * 2);
+        ctx.fill();
       }
       ctx.globalAlpha = 1;
     }
@@ -270,6 +366,20 @@ export class Stage {
 
     const near = showTarget && target && target.t - e.pos <= 4 ? target.notes.filter((n) => e.noteState(n) !== 1) : null;
     this.drawKeyboard(now, near, showTarget);
+
+    const count = e.countInBeat();
+    if (count) {
+      const k = this.reduceMotion ? 0 : count.frac;
+      ctx.globalAlpha = 0.9 * (1 - 0.6 * k);
+      ctx.fillStyle = count.beat === 1 ? '#5fd4e8' : '#ffffff';
+      ctx.font = `700 ${Math.round(Math.min(96, waterY * 0.3) * (1 + 0.12 * (1 - k)))}px ${DISPLAY_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(count.beat), w / 2, waterY * 0.5);
+      ctx.textBaseline = 'alphabetic';
+      ctx.textAlign = 'left';
+      ctx.globalAlpha = 1;
+    }
 
     if (e.waiting && e.mode === 'learn' && e.playing) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
@@ -322,6 +432,11 @@ export class Stage {
         ctx.fillText(String(tn.finger), r.x + r.w / 2, waterY + kbH * 0.72);
       }
       ctx.textAlign = 'left';
+      if (this.outsideController(p)) {
+        ctx.fillStyle = 'rgba(4, 17, 29, 0.55)';
+        rr(ctx, r.x + 1, waterY + 2, r.w - 2, kbH - 4, 5);
+        ctx.fill();
+      }
     }
     for (let p = this.low; p <= this.high; p++) {
       if (!isBlackKey(p)) continue;
@@ -342,6 +457,11 @@ export class Stage {
           ctx.fillText(String(tn.finger), r.x + r.w / 2, waterY + bh * 0.8);
           ctx.textAlign = 'left';
         }
+      }
+      if (this.outsideController(p)) {
+        ctx.fillStyle = 'rgba(4, 17, 29, 0.5)';
+        rr(ctx, r.x, waterY + 2, r.w, bh, 4);
+        ctx.fill();
       }
     }
   }

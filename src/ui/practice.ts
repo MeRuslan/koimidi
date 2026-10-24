@@ -3,7 +3,8 @@ import type { App, PieceInfo } from '../app';
 import { fingerName, keysLabel, noteName, t, type Key } from '../i18n';
 import { ComputerKeyboard } from '../input/keyboard';
 import { KEYBOARD_SIZES, type KeyboardChoice } from '../input/profile';
-import { Engine, type HandSel, type Mode, type Summary } from '../practice/engine';
+import { Engine, type HandSel, type Mode, type PassStats, type Summary } from '../practice/engine';
+import { addPass, emptyProgress, type PassResult, type PieceProgress } from '../practice/progress';
 import { Recorder, takeToMidi, type Take } from '../practice/recorder';
 import { FINGER_COLORS, Stage } from '../render/stage';
 import { applyEdits, clearEdits, setFinger, suggestedSource, type FingerEdits } from '../score/edits';
@@ -12,8 +13,10 @@ import type { MidiSplit } from '../score/midi';
 import { toMusicXML } from '../score/musicxml-export';
 import { scoreFromStored } from '../importer';
 import { getFile, putFingerings } from '../storage/files';
+import { deleteProgress, getProgress, putProgress } from '../storage/progress';
 import { clearPieceSettings, loadPieceSettings, savePieceSettings } from '../storage/settings';
 import { $, download, el, formatDuration, safeFileName, toast } from './dom';
+import { percent, ProgressPanel } from './progress-panel';
 
 const NO_FINGER = '#9fb4c4';
 const DIGITS: Record<string, Finger> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5 };
@@ -39,9 +42,21 @@ export class PracticeView {
   private takeSaved = true;
   private takeTimers: ReturnType<typeof setTimeout>[] = [];
   private recTimer: ReturnType<typeof setInterval> | undefined;
+  /** this piece's practice progress, once loaded from storage */
+  private progress: PieceProgress | null = null;
+  /** result of the last complete pass, for the end-of-piece hint */
+  private lastPass: PassResult | null = null;
+  private panel: ProgressPanel;
 
   constructor(private app: App) {
     this.stage = new Stage($<HTMLCanvasElement>('stage'));
+    this.panel = new ProgressPanel(
+      (m) => {
+        this.setRange(m, m);
+        this.refreshPanel();
+      },
+      () => this.resetProgress(),
+    );
     this.kb = new ComputerKeyboard({
       noteOn: (p, v) => this.noteOn(p, v),
       noteOff: (p) => this.noteOff(p),
@@ -55,10 +70,17 @@ export class PracticeView {
   /* ---------- open / close ---------- */
 
   open(score: Score, info: PieceInfo, edits: FingerEdits): void {
+    this.engine?.dispose(); // reports the previous piece's last pass while it is still current
     this.score = score;
     this.info = info;
     this.edits = edits;
-    this.engine?.dispose();
+    this.lastPass = null;
+    if (this.progress?.id !== info.id) {
+      this.progress = null;
+      void getProgress(info.id).then((p) => {
+        if (this.info?.id === info.id) this.progress = p;
+      });
+    }
     const e = new Engine(score, {
       flash: (p, kind) => this.stage.flash(p, kind),
       ripple: (p, n) => this.stage.ripple(p, n.finger ? FINGER_COLORS[n.finger] : NO_FINGER),
@@ -71,6 +93,7 @@ export class PracticeView {
       finished: (s) => this.hintFinished(s),
       change: () => (this.dirty = true),
       tick: (delay, accent) => this.app.synth.click(delay, accent),
+      pass: (stats) => this.recordPass(info.id, stats),
     });
     this.engine = e;
     const s = this.app.settings;
@@ -80,6 +103,7 @@ export class PracticeView {
     e.anyOctave = s.anyOctave;
     e.countIn = s.countIn;
     e.metronome = s.metronome;
+    e.accompany = s.accompany;
     e.speed = ps.speed ?? s.speed;
     e.setHand(ps.hand && this.handAvailable(ps.hand) ? ps.hand : e.pickHand());
     e.setRangeMeasures(ps.from ?? 1, ps.to ?? e.lastMeasure());
@@ -111,6 +135,7 @@ export class PracticeView {
     this.app.synth.allOff();
     this.kb.releaseAll();
     this.closeSettings();
+    this.panel.close();
     this.closePicker();
     document.title = 'koimidi — free piano trainer';
   }
@@ -130,7 +155,23 @@ export class PracticeView {
     this.syncControls();
     this.buildSections();
     this.renderTake();
+    this.refreshPanel();
     this.dirty = true;
+  }
+
+  /**
+   * Store progress including the pass under way, e.g. when the page is hidden
+   * or closed. The pass itself goes on and is counted once it ends; the stored
+   * snapshot is replaced then.
+   */
+  flushProgress(): void {
+    const p = this.progress;
+    if (!p) return;
+    const cur = this.engine?.currentPass;
+    if (!cur) return;
+    const snap = structuredClone(p);
+    addPass(snap, cur);
+    void putProgress(snap);
   }
 
   /** The keyboard profile changed (setting or a newly connected device): refit the on-screen keyboard. */
@@ -200,6 +241,7 @@ export class PracticeView {
       case 'Escape':
         if (this.picked) this.closePicker();
         else if (!$('settings').hidden) this.closeSettings();
+        else if (this.panel.open) this.panel.close();
         else this.app.showHome();
         return true;
       case 'BracketLeft': {
@@ -233,6 +275,7 @@ export class PracticeView {
         this.engine?.setMode(s.mode);
         this.hideHint();
         this.syncControls();
+        this.refreshPanel();
       }),
     );
     $('metro').addEventListener('click', () => {
@@ -252,9 +295,19 @@ export class PracticeView {
         this.closePicker();
         this.lastStats = '';
         this.warnFit();
-        $('legendLeft').hidden = r.value !== 'both';
+        this.syncControls();
+        this.refreshPanel();
       }),
     );
+    const accomp = $<HTMLInputElement>('accomp');
+    accomp.addEventListener('change', () => {
+      s.accompany = accomp.checked;
+      this.app.save();
+      if (!this.engine) return;
+      this.engine.setAccompany(s.accompany);
+      this.stage.fitRange();
+      this.syncControls();
+    });
     const tempo = $<HTMLInputElement>('tempo');
     tempo.addEventListener('input', () => {
       if (!this.engine) return;
@@ -329,6 +382,22 @@ export class PracticeView {
       this.take = null;
       this.takeSaved = true;
       this.renderTake();
+    });
+
+    // progress popover
+    const progBtn = $('progressBtn');
+    progBtn.addEventListener('click', () => {
+      if (this.panel.open) this.panel.close();
+      else if (this.engine && this.score) {
+        this.closeSettings();
+        this.closePicker();
+        this.panel.show(this.progress, this.engine, this.score);
+      }
+    });
+    addEventListener('pointerdown', (e) => {
+      if (!this.panel.open) return;
+      const target = e.target as Node;
+      if (!$('progress').contains(target) && !progBtn.contains(target)) this.panel.close();
     });
 
     // settings popover
@@ -416,6 +485,7 @@ export class PracticeView {
     this.engine.setRangeMeasures(from, to);
     this.savePiece();
     this.syncControls();
+    this.refreshPanel();
   }
 
   private savePiece(): void {
@@ -441,6 +511,7 @@ export class PracticeView {
   private openSettings(): void {
     const s = this.app.settings;
     this.closePicker();
+    this.panel.close();
     $<HTMLInputElement>('sound').checked = s.sound;
     $<HTMLInputElement>('volume').value = String(s.volume);
     $<HTMLInputElement>('countIn').checked = s.countIn;
@@ -488,6 +559,9 @@ export class PracticeView {
     hands.hidden = !(score.hands.R && score.hands.L);
     document.querySelectorAll<HTMLInputElement>('input[name=hand]').forEach((r) => (r.checked = r.value === e.hand));
     $('legendLeft').hidden = e.hand !== 'both' || hands.hidden;
+    $('accompRow').hidden = hands.hidden || e.hand === 'both';
+    $<HTMLInputElement>('accomp').checked = e.accompany;
+    $('legendAcc').hidden = !e.accompanying;
     $<HTMLInputElement>('tempo').value = String(Math.round(e.speed * 100));
     this.renderTempo();
     const from = $<HTMLInputElement>('rangeFrom');
@@ -606,6 +680,47 @@ export class PracticeView {
     this.lastNext = '';
     if (f) this.showHint(t('hint.fingerSet', { f, fname: fingerName(f) }), 2200, true);
     else this.showHint(t('hint.fingerReset'), 1800, true);
+  }
+
+  /* ---------- progress ---------- */
+
+  private recordPass(id: string, stats: PassStats): void {
+    const p = this.progress?.id === id ? this.progress : null;
+    if (!p) {
+      // not loaded yet (or another piece is open by now): fold it into the stored copy
+      void getProgress(id).then((q) => {
+        addPass(q, stats);
+        return putProgress(q);
+      });
+      return;
+    }
+    const r = addPass(p, stats);
+    void putProgress(p);
+    if (r && this.info?.id === id) {
+      this.lastPass = r;
+      // with the loop on the next pass starts at once: show how this one went
+      if (this.engine?.loop) this.showHint(this.passText(r, stats.from, stats.to), 3500, true);
+    }
+    this.refreshPanel();
+  }
+
+  private passText(r: PassResult, from: number, to: number): string {
+    const e = this.engine!;
+    const what = from === 1 && to === e.lastMeasure() ? t('pass.whole') : t('pass.range', { from, to });
+    let text = t('pass.result', { what, acc: percent(r.accuracy) });
+    if (r.previousBest !== null) text += r.accuracy > r.previousBest + 1e-9 ? t('pass.best') : t('pass.bestWas', { best: percent(r.previousBest) });
+    return text;
+  }
+
+  private refreshPanel(): void {
+    if (this.panel.open && this.engine && this.score) this.panel.render(this.progress, this.engine, this.score);
+  }
+
+  private resetProgress(): void {
+    if (!this.info) return;
+    this.progress = emptyProgress(this.info.id);
+    void deleteProgress(this.info.id);
+    this.refreshPanel();
   }
 
   /* ---------- export ---------- */
@@ -819,9 +934,11 @@ export class PracticeView {
     const e = this.engine!;
     const missed = s.mode === 'tempo' ? t('hint.doneMissed', { misses: s.misses }) : '';
     const whole = e.rangeMeasures[0] === 1 && e.rangeMeasures[1] === e.lastMeasure();
-    const text = whole
+    let text = whole
       ? t('hint.done', { hits: s.hits, wrong: s.wrong, missed })
       : t('hint.sectionDone', { from: e.rangeMeasures[0], to: e.rangeMeasures[1], hits: s.hits, wrong: s.wrong, missed });
+    const r = this.lastPass;
+    if (r) text += ` ${percent(r.accuracy)}${r.previousBest === null ? '' : r.accuracy > r.previousBest + 1e-9 ? t('pass.best') : t('pass.bestWas', { best: percent(r.previousBest) })}`;
     this.showHint(text, 7000, true);
   }
 }

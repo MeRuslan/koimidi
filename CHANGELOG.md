@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.0 — 2026-10-25
+
+Two hands for real.
+
+- The trainer plays the other hand while you practise one (**+ other hand**, on by default): grey bars without numbers, softer sound, its own key colour; in Learn mode its notes wait with the timeline and sound together with yours, even when you play ahead of the bars
+- Every pass through the loop range is counted per bar (hits, wrong keys, misses) with its practice time; waits longer than 15 s for a key do not count
+- Progress panel: practice time, mistakes per bar as a heat strip (click a bar to loop it), hardest bars, accuracy trend and the latest passes for the current range, mode and hand; reset per piece
+- After each pass: "Bars 1–8: 94% correct, your best yet!"; the end-of-range summary now counts that pass only
+- Library cards show practice time and best result
+- Offline use as a PWA: web app manifest with icons, a service worker that keeps the whole app (about 600 KB) in the browser, an update prompt instead of surprise reloads, and an Install button where the browser offers it
+- Progress is saved when the page is hidden or closed; IndexedDB version 3 adds the "progress" store, and removing a file removes its progress
+
 ## v0.2.0 — 2026-10-25
 
 Learn your own piece.

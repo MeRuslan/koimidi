@@ -3,10 +3,15 @@ import type { App } from '../app';
 import { barsLabel, getLang, keysLabel, t } from '../i18n';
 import { fits, presetRange } from '../input/profile';
 import { libraryItems } from '../library';
+import { bestAccuracy, type PieceProgress } from '../practice/progress';
 import { deleteFile, listFiles, type StoredFileMeta } from '../storage/files';
+import { listProgress } from '../storage/progress';
 import { $, el, formatDuration } from './dom';
+import { percent, practiceTime } from './progress-panel';
 
 export class HomeView {
+  private progress = new Map<string, PieceProgress>();
+
   constructor(private app: App) {
     $('langToggle').addEventListener('click', () => app.setLanguage(getLang() === 'ru' ? 'en' : 'ru'));
   }
@@ -16,6 +21,21 @@ export class HomeView {
     this.renderLibrary();
     void this.renderRecent();
     this.app.renderMidiStatus();
+    // practice time and best result arrive from storage a moment later
+    void listProgress().then((m) => {
+      this.progress = m;
+      this.renderLibrary();
+      void this.renderRecent();
+    });
+  }
+
+  /** "12 min · best 94%" for pieces practised for at least half a minute. */
+  private progressBadge(id: string): HTMLElement | null {
+    const p = this.progress.get(id);
+    if (!p || p.seconds < 30) return null;
+    const best = bestAccuracy(p);
+    const time = practiceTime(p.seconds);
+    return el('span', { class: 'prog', text: best === null ? time : t('progress.card', { time, acc: percent(best) }) });
   }
 
   private handsLabel(h: { R: boolean; L: boolean }): string {
@@ -29,7 +49,7 @@ export class HomeView {
     return el('span', { class: 'fit', text: `⚠ ${t('kb.needs', { keys: keysLabel(high - low + 1) })}`, title: t('kb.needsTitle', { keys: keysLabel(+size) }) });
   }
 
-  private meta(difficulty: number | null, hands: { R: boolean; L: boolean }, measures: number, seconds?: number, fit?: HTMLElement | null): HTMLElement {
+  private meta(difficulty: number | null, hands: { R: boolean; L: boolean }, measures: number, seconds?: number, ...extras: (HTMLElement | null)[]): HTMLElement {
     const m = el('span', { class: 'm' });
     if (difficulty) {
       const dots = el('span', { class: 'dots', title: t(`difficulty.${Math.min(3, difficulty)}` as 'difficulty.1') });
@@ -39,7 +59,7 @@ export class HomeView {
     m.append(el('span', { text: this.handsLabel(hands) }));
     m.append(el('span', { text: barsLabel(measures) }));
     if (seconds) m.append(el('span', { text: formatDuration(seconds) }));
-    if (fit) m.append(fit);
+    for (const x of extras) if (x) m.append(x);
     return m;
   }
 
@@ -52,7 +72,7 @@ export class HomeView {
       const card = el('button', { type: 'button', class: 'card' }, [
         el('span', { class: 't', text: ru ? item.titleRu : item.title }),
         el('span', { class: 'c', text: ru ? item.composerRu : item.composer }),
-        this.meta(item.difficulty, item.hands, item.measures, item.seconds, this.fitBadge(item.low, item.high)),
+        this.meta(item.difficulty, item.hands, item.measures, item.seconds, this.fitBadge(item.low, item.high), this.progressBadge(item.id)),
       ]);
       if (item.id === last) card.append(el('span', { class: 'badge', text: t('continue') }));
       card.addEventListener('click', () => void this.app.openLibrary(item.id));
@@ -75,7 +95,7 @@ export class HomeView {
       el('span', { class: 'tc' }, [el('span', { class: 't', text: f.title || f.name }), el('span', { class: 'c', text: f.composer || f.name })]),
       el('span', { class: 'right' }, [
         ...(isLast ? [el('span', { class: 'badge', text: t('continue') })] : []),
-        this.meta(null, f.hands, f.measures, undefined, this.fitBadge(f.low, f.high)),
+        this.meta(null, f.hands, f.measures, undefined, this.fitBadge(f.low, f.high), this.progressBadge(f.id)),
       ]),
     ]);
     open.addEventListener('click', () => void this.app.openStored(f.id));

@@ -10,6 +10,13 @@
  * metronome (tempo and listen modes) clicks on every beat. Clicks are handed
  * to the synth slightly ahead with their exact delay, so they do not jitter
  * with the frame rate.
+ *
+ * When one hand of a two-hand piece is practised, the trainer can play the
+ * other hand. In learn mode its notes wait with the timeline, so a chord that
+ * starts together with your note sounds when you play it.
+ *
+ * Every pass through the range is counted per bar (hits, wrong keys, misses)
+ * and reported with `pass` when it ends or is interrupted.
  */
 import { bpmAt, groupByOnset, type Hand, type NoteGroup, type Score, type ScoreNote } from '../score/model';
 
@@ -31,6 +38,29 @@ export interface EngineEvents {
   change(): void;
   /** metronome click `delay` seconds from now; `accent` on the first beat of a bar */
   tick(delay: number, accent: boolean): void;
+  /** a pass through the range ended (complete) or was cut short */
+  pass(stats: PassStats): void;
+}
+
+export interface BarTally {
+  hits: number;
+  wrong: number;
+  misses: number;
+}
+
+/** One pass through the loop range, or the part of it played before stopping. */
+export interface PassStats extends BarTally {
+  from: number;
+  to: number;
+  mode: Mode;
+  hand: HandSel;
+  speed: number;
+  /** seconds of practice, long idle waits left out */
+  seconds: number;
+  /** played to the end of the range */
+  complete: boolean;
+  /** per bar number */
+  bars: Record<number, BarTally>;
 }
 
 interface Click {
@@ -38,6 +68,7 @@ interface Click {
   accent: boolean;
 }
 
+/** Counts of the pass that just reached the end of the range. */
 export interface Summary {
   hits: number;
   wrong: number;
@@ -50,6 +81,8 @@ const HIT_WIN = 0.45; // beats, "in tempo" mode
 const EARLY = 0.6; // beats: when a press starts the lesson, jump this close to the note
 const CATCH_UP = 5; // speed multiplier while bars catch up after an early press
 const CLICK_AHEAD = 0.12; // seconds: metronome clicks are scheduled this far ahead
+const IDLE_MAX = 15; // seconds: waiting longer than this for a key does not count as practice
+const ACC_GAIN = 0.75; // the trainer's hand plays a little softer than yours
 
 export class Engine {
   score: Score;
@@ -62,6 +95,8 @@ export class Engine {
   countIn = true;
   /** click every beat in tempo and listen modes */
   metronome = false;
+  /** play the other hand when one hand of a two-hand piece is practised */
+  accompany = true;
 
   pos = 0;
   playing = false;
@@ -77,12 +112,16 @@ export class Engine {
   groups: NoteGroup[] = [];
   state = new Map<ScoreNote, NoteState>();
   next = 0;
-  /** keys currently down: pitch → source */
-  keys = new Map<number, 'user' | 'auto'>();
+  /** keys currently down: pitch → who pressed them (the player, listen mode, the trainer's other hand) */
+  keys = new Map<number, 'user' | 'auto' | 'acc'>();
   private catchUpTo = -Infinity;
   private autoTimers: ReturnType<typeof setTimeout>[] = [];
   private clicks: Click[] = [];
   private nextClick = 0;
+  private acc: ScoreNote[] = [];
+  private nextAcc = 0;
+  private cur: PassStats | null = null;
+  private idle = 0;
 
   constructor(score: Score, private ev: EngineEvents) {
     this.score = score;
@@ -109,18 +148,22 @@ export class Engine {
   }
 
   setHand(h: HandSel): void {
+    this.endPass(false);
     this.hand = h;
     this.groups = groupByOnset(this.activeNotes);
+    this.buildAccompaniment();
     this.restart();
   }
 
   setMode(m: Mode): void {
+    this.endPass(false);
     this.mode = m;
     this.hits = this.wrong = this.misses = 0;
     this.restart();
   }
 
   setRangeMeasures(from: number, to: number): void {
+    this.endPass(false);
     const last = this.lastMeasure();
     from = Math.max(1, Math.min(from, last));
     to = Math.max(from, Math.min(to, last));
@@ -140,6 +183,92 @@ export class Engine {
   setCountIn(on: boolean): void {
     this.countIn = on;
     if (this.mode === 'tempo') this.restart();
+  }
+
+  setAccompany(on: boolean): void {
+    this.accompany = on;
+    this.buildAccompaniment();
+    this.seekAccompaniment(this.pos);
+    for (const [p, src] of [...this.keys]) if (src === 'acc') this.keys.delete(p);
+    this.ev.change();
+  }
+
+  /* ---------- the other hand ---------- */
+
+  /** Is the trainer playing the other hand right now? */
+  get accompanying(): boolean {
+    return this.accompany && this.hand !== 'both' && this.score.hands.R && this.score.hands.L;
+  }
+
+  /** Notes the trainer plays for the other hand (empty when it does not). */
+  get accompaniment(): ScoreNote[] {
+    return this.acc;
+  }
+
+  private buildAccompaniment(): void {
+    this.acc = this.accompanying ? this.score.notes.filter((n) => n.hand !== this.hand).sort((a, b) => a.t - b.t) : [];
+  }
+
+  private seekAccompaniment(t: number): void {
+    const i = this.acc.findIndex((n) => n.t >= t - 1e-6);
+    this.nextAcc = i < 0 ? this.acc.length : i;
+  }
+
+  /**
+   * Sound the other hand's notes up to beat `until`. The timeline calls it
+   * with `inclusive` false while it waits on a note, so the chord that starts
+   * with that note holds until the player plays it; then (even ahead of the
+   * bars) it is called up to that note, inclusive.
+   */
+  private playAccompaniment(until: number, inclusive: boolean): void {
+    const [start, end] = this.range;
+    while (this.nextAcc < this.acc.length) {
+      const n = this.acc[this.nextAcc];
+      if (n.t >= end - 1e-6) break;
+      if (inclusive ? n.t > until + 1e-6 : n.t >= until - 1e-9) break;
+      this.nextAcc++;
+      if (n.t >= start - 1e-6) this.autoPlay(n, 'acc', ACC_GAIN);
+    }
+  }
+
+  private autoPlay(n: ScoreNote, src: 'auto' | 'acc', gain = 1): void {
+    const secs = (n.dur * 60) / (bpmAt(this.score, n.t) * this.speed);
+    this.ev.sound(n.pitch, (n.velocity ?? 0.7) * gain, secs, n);
+    this.keys.set(n.pitch, src);
+    this.autoTimers.push(setTimeout(() => { if (this.keys.get(n.pitch) === src) this.keys.delete(n.pitch); }, Math.max(120, secs * 1000 - 40)));
+  }
+
+  /* ---------- pass statistics ---------- */
+
+  private startPass(): void {
+    const [from, to] = this.rangeMeasures;
+    this.cur = { from, to, mode: this.mode, hand: this.hand, speed: this.speed, hits: 0, wrong: 0, misses: 0, seconds: 0, complete: false, bars: {} };
+    this.idle = 0;
+  }
+
+  /** Report the pass so far (listen mode and passes without a single note are not practice). */
+  private endPass(complete: boolean): void {
+    const p = this.cur;
+    this.cur = null;
+    if (!p || p.mode === 'listen' || p.hits + p.wrong + p.misses === 0) return;
+    p.complete = complete;
+    p.speed = this.speed;
+    this.ev.pass(p);
+  }
+
+  /** A copy of the pass in progress, when it has any notes in it. */
+  get currentPass(): PassStats | null {
+    const p = this.cur;
+    if (!p || p.mode === 'listen' || p.hits + p.wrong + p.misses === 0) return null;
+    return { ...structuredClone(p), speed: this.speed };
+  }
+
+  private tally(measure: number, kind: keyof BarTally): void {
+    const p = this.cur;
+    if (!p) return;
+    p[kind]++;
+    const b = (p.bars[measure] ??= { hits: 0, wrong: 0, misses: 0 });
+    b[kind]++;
   }
 
   /* ---------- beats, count-in, metronome ---------- */
@@ -214,6 +343,8 @@ export class Engine {
   /* ---------- transport ---------- */
 
   restart(keepPlaying = false): void {
+    this.endPass(false);
+    this.startPass();
     this.clearAuto();
     const [start] = this.range;
     this.pos = start - this.leadBeats();
@@ -222,8 +353,9 @@ export class Engine {
     this.finished = false;
     this.next = this.firstGroupAtOrAfter(start);
     for (const g of this.groups) if (g.t >= start - 1e-6) for (const n of g.notes) this.state.set(n, 0);
-    for (const [p, src] of [...this.keys]) if (src === 'auto') this.keys.delete(p);
+    for (const [p, src] of [...this.keys]) if (src !== 'user') this.keys.delete(p);
     if (!keepPlaying) this.playing = false;
+    this.seekAccompaniment(start);
     this.buildClicks();
     this.ev.change();
   }
@@ -265,6 +397,7 @@ export class Engine {
 
   press(pitch: number, velocity = 0.8): void {
     this.keys.set(pitch, 'user');
+    this.idle = 0;
     if (this.mode === 'listen' || this.finished) return;
     const target = this.target;
     if (!target) return;
@@ -286,6 +419,7 @@ export class Engine {
           this.waiting = false;
           if (this.pos < target.t) this.catchUpTo = target.t; // bars catch up smoothly
           this.next++;
+          this.playAccompaniment(target.t, true); // the other hand plays together with you
         }
       } else this.reject(pitch, pending);
     } else {
@@ -314,6 +448,7 @@ export class Engine {
   private accept(n: ScoreNote, pitch: number): void {
     this.state.set(n, 1);
     this.hits++;
+    this.tally(n.measure, 'hits');
     this.ev.flash(pitch, 'ok');
     this.ev.ripple(pitch, n);
     if (n.pitch !== pitch) this.ev.octaveHint(pitch, n.pitch);
@@ -321,6 +456,7 @@ export class Engine {
 
   private reject(pitch: number, wanted: ScoreNote[]): void {
     this.wrong++;
+    this.tally(wanted[0].measure, 'wrong');
     this.ev.flash(pitch, 'bad');
     const sameClass = wanted.find((n) => (n.pitch - pitch) % 12 === 0);
     if (sameClass && !this.anyOctave) this.ev.octaveHint(pitch, sameClass.pitch);
@@ -335,6 +471,10 @@ export class Engine {
 
   step(dt: number): void {
     if (!this.playing) return;
+    if (this.cur) {
+      this.idle = this.waiting ? this.idle + dt : 0;
+      if (this.idle <= IDLE_MAX) this.cur.seconds += dt;
+    }
     const bps = bpmAt(this.score, Math.max(0, this.pos)) / 60;
     let adv = dt * bps * this.speed;
     if (this.pos < this.catchUpTo) {
@@ -361,6 +501,7 @@ export class Engine {
           if (this.state.get(n) === 0) {
             this.state.set(n, 2);
             this.misses++;
+            this.tally(n.measure, 'misses');
           }
         }
       }
@@ -370,28 +511,29 @@ export class Engine {
         const g = this.groups[this.next++];
         for (const n of g.notes) {
           this.state.set(n, 1);
-          const secs = (n.dur * 60) / (bpmAt(this.score, n.t) * this.speed);
-          this.ev.sound(n.pitch, n.velocity ?? 0.7, secs, n);
+          this.autoPlay(n, 'auto');
           this.ev.ripple(n.pitch, n);
-          this.keys.set(n.pitch, 'auto');
-          this.autoTimers.push(setTimeout(() => { if (this.keys.get(n.pitch) === 'auto') this.keys.delete(n.pitch); }, Math.max(120, secs * 1000 - 40)));
         }
       }
     }
+    this.playAccompaniment(np, !this.waiting);
     this.scheduleClicks(np, bps * this.speed);
     this.pos = np;
 
     if (this.pos >= end) {
       if (this.loop) {
+        this.endPass(true);
         this.restart(true);
         return;
       }
       // let the last bars sink before stopping
       if (this.pos >= end + LEAD * 0.75) {
+        const pass = this.cur ?? { hits: 0, wrong: 0, misses: 0 };
+        this.endPass(true);
         this.finished = true;
         this.playing = false;
         this.clearAuto();
-        this.ev.finished({ hits: this.hits, wrong: this.wrong, misses: this.misses, mode: this.mode });
+        this.ev.finished({ hits: pass.hits, wrong: pass.wrong, misses: pass.misses, mode: this.mode });
       }
     }
     this.ev.change();
@@ -403,6 +545,7 @@ export class Engine {
   }
 
   dispose(): void {
+    this.endPass(false);
     this.clearAuto();
   }
 }

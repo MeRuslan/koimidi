@@ -13,6 +13,7 @@ function make(text = 'time: 4/4\ntempo: 120\nR: C4 D4 E4 F4 | G4 A4 B4 C5 | [C4 
     finished: vi.fn(),
     change: vi.fn(),
     tick: vi.fn(),
+    pass: vi.fn(),
   };
   const e = new Engine(score, ev);
   e.speed = 1;
@@ -216,5 +217,111 @@ describe('engine: count-in and metronome', () => {
     const ticks = (ev.tick as ReturnType<typeof vi.fn>).mock.calls;
     // count-in bar, then two bars
     expect(ticks.map((c) => c[1])).toEqual([true, false, true, false, true, false]);
+  });
+});
+
+describe('engine: the other hand', () => {
+  const TWO = 'time: 4/4\ntempo: 120\nR: C5 D5 E5 F5 | G5/1 |\nL: C3/2 G3/2 | C3/1 |';
+  const run = (e: Engine, seconds: number) => {
+    for (let i = 0; i < seconds * 60; i++) e.step(1 / 60);
+  };
+  const sounded = (ev: EngineEvents) => (ev.sound as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+
+  it('learn mode: the left hand waits with the timeline and sounds with your note', () => {
+    const { e, ev } = make(TWO);
+    e.setHand('R');
+    expect(e.accompanying).toBe(true);
+    expect(e.accompaniment.map((n) => n.pitch)).toEqual([48, 55, 48]);
+    e.setPlaying(true);
+    run(e, 2);
+    expect(e.waiting).toBe(true);
+    expect(sounded(ev)).toEqual([]); // C3 starts with C5: it waits for you
+    e.press(72);
+    run(e, 0.1);
+    expect(sounded(ev)).toEqual([48]);
+    e.press(74);
+    run(e, 0.6);
+    e.press(76); // E5 together with G3
+    run(e, 0.1);
+    expect(sounded(ev)).toEqual([48, 55]);
+    expect(e.keys.get(55)).toBe('acc');
+  });
+
+  it('an early press brings the other hand along at once', () => {
+    const { e, ev } = make(TWO);
+    e.setHand('R');
+    e.press(72); // starts the lesson ahead of the bars
+    expect(e.pos).toBeLessThan(0);
+    expect(sounded(ev)).toEqual([48]);
+  });
+
+  it('tempo mode plays the other hand on time; off when switched off or practising both', () => {
+    const { e, ev } = make(TWO);
+    e.countIn = false;
+    e.setMode('tempo');
+    e.loop = false;
+    e.setHand('L');
+    e.setPlaying(true);
+    run(e, 3);
+    expect(sounded(ev)).toEqual([72, 74, 76, 77, 79]);
+    e.setAccompany(false);
+    expect(e.accompaniment).toEqual([]);
+    e.setAccompany(true);
+    e.setHand('both');
+    expect(e.accompanying).toBe(false);
+  });
+
+  it('a one-hand piece never accompanies', () => {
+    const { e } = make();
+    expect(e.accompanying).toBe(false);
+  });
+});
+
+describe('engine: pass statistics', () => {
+  const run = (e: Engine, seconds: number) => {
+    for (let i = 0; i < seconds * 60; i++) e.step(1 / 60);
+  };
+  const passes = (ev: EngineEvents) => (ev.pass as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+
+  it('reports a complete pass with counts per bar', () => {
+    const { e, ev } = make('time: 4/4\ntempo: 120\nR: C4 D4 E4 F4 | G4 A4 B4 C5 |');
+    e.loop = false;
+    e.setPlaying(true);
+    for (const p of [60, 62, 64, 66, 65, 67, 69, 71, 72]) {
+      run(e, 0.6);
+      e.press(p);
+    }
+    run(e, 3);
+    const [s] = passes(ev);
+    expect(s.complete).toBe(true);
+    expect([s.hits, s.wrong, s.misses]).toEqual([8, 1, 0]);
+    expect(s.bars[1]).toEqual({ hits: 4, wrong: 1, misses: 0 });
+    expect(s.bars[2]).toEqual({ hits: 4, wrong: 0, misses: 0 });
+    expect(s.seconds).toBeGreaterThan(4);
+    expect([s.from, s.to, s.mode, s.hand]).toEqual([1, 2, 'learn', 'R']);
+  });
+
+  it('a pass cut short by a restart is reported as incomplete; empty ones not at all', () => {
+    const { e, ev } = make();
+    e.setPlaying(true);
+    e.restart();
+    expect(passes(ev)).toHaveLength(0);
+    e.setPlaying(true);
+    run(e, 0.5);
+    e.press(60);
+    e.setRangeMeasures(2, 2);
+    const [s] = passes(ev);
+    expect(s.complete).toBe(false);
+    expect([s.from, s.to, s.hits]).toEqual([1, 3, 1]);
+  });
+
+  it('long waits for a key do not count as practice time', () => {
+    const { e, ev } = make();
+    e.setPlaying(true);
+    run(e, 60);
+    e.press(60);
+    e.dispose();
+    const [s] = passes(ev);
+    expect(s.seconds).toBeLessThan(16);
   });
 });

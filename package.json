@@ -1,6 +1,6 @@
 {
   "name": "koimidi",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "koimidi — free piano trainer for MIDI keyboards in the browser: falling notes with finger numbers, wait-for-key mode, built-in sound. No sign-up, files never leave the browser.",
   "private": true,
   "type": "module",

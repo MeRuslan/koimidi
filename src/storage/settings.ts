@@ -26,6 +26,8 @@ export interface Settings {
   countIn: boolean;
   /** the player's controller: a key count, or detect from the device name */
   keyboard: KeyboardChoice;
+  /** the trainer plays the other hand when one hand of a two-hand piece is practised */
+  accompany: boolean;
   lastPieceId?: string;
 }
 
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   metronome: false,
   countIn: true,
   keyboard: 'auto',
+  accompany: true,
 };
 
 function read<T>(key: string): T | null {

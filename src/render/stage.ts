@@ -9,6 +9,10 @@ import type { Engine, FlashKind } from '../practice/engine';
 
 export const FINGER_COLORS = ['', '#ff8a6b', '#ffcf5a', '#48d6c6', '#8ea8ff', '#e590ff'];
 const NO_FINGER = '#9fb4c4';
+/** bars and keys of the hand the trainer plays */
+const ACC_BAR = '#6f8797';
+const ACC_KEY_WHITE = '#b9cbd6';
+const ACC_KEY_BLACK = '#4b6475';
 const LOOKAHEAD_SEC = 5;
 const UI_FONT = '"Golos Text", system-ui, sans-serif';
 const DISPLAY_FONT = '"Unbounded", "Golos Text", system-ui, sans-serif';
@@ -83,8 +87,10 @@ export class Stage {
    */
   fitRange(): void {
     if (!this.engine) return;
-    const pitches = this.engine.activeNotes.map((n) => n.pitch);
-    this.placement = this.profile ? placeRange(this.profile, pitches) : null;
+    const own = this.engine.activeNotes.map((n) => n.pitch);
+    // the trainer's hand is shown too, but the controller is placed for the player's notes
+    const pitches = [...own, ...this.engine.accompaniment.map((n) => n.pitch)];
+    this.placement = this.profile ? placeRange(this.profile, own) : null;
     if (this.profile && this.placement && keyCount(this.profile) <= MIRROR_MAX_KEYS) {
       let lo = Math.min(this.placement.low, ...pitches);
       let hi = Math.max(this.placement.high, ...pitches);
@@ -292,6 +298,17 @@ export class Stage {
       ctx.setLineDash([]);
     }
 
+    // the other hand, played by the trainer: plain grey bars underneath
+    ctx.fillStyle = ACC_BAR;
+    ctx.globalAlpha = 0.45;
+    for (const n of e.accompaniment) {
+      const br = this.barRect(n, e.pos);
+      if (!br) continue;
+      rr(ctx, br.x, br.top, br.w, br.bot - br.top, 6);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
     // notes
     const target = e.target;
     const targetSet = new Set(target?.notes ?? []);
@@ -400,7 +417,9 @@ export class Stage {
     const keyFill = (p: number, base: string) => {
       const fl = this.flashes.find((f) => f.p === p);
       if (fl) return fl.kind === 'ok' ? '#57e39b' : fl.kind === 'bad' ? '#ff5d6c' : '#5fd4e8';
-      if (e?.keys.has(p)) return '#5fd4e8';
+      const src = e?.keys.get(p);
+      if (src === 'acc') return isBlackKey(p) ? ACC_KEY_BLACK : ACC_KEY_WHITE;
+      if (src) return '#5fd4e8';
       return base;
     };
     const targetFor = (p: number) => targets?.find((n) => n.pitch === p);

@@ -21,13 +21,24 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
-export function toast(text: string, opts: { ms?: number; error?: boolean } = {}): void {
+/** A short message at the bottom; `ms: Infinity` keeps it until its action is used. */
+export function toast(text: string, opts: { ms?: number; error?: boolean; action?: { label: string; run: () => void } } = {}): void {
   const t = $('toast');
-  t.textContent = text;
+  t.replaceChildren(text);
+  const action = opts.action;
+  if (action) {
+    const b = el('button', { type: 'button', class: 'primary small', text: action.label });
+    b.addEventListener('click', () => {
+      t.hidden = true;
+      action.run();
+    });
+    t.append(b);
+  }
   t.classList.toggle('error', !!opts.error);
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), opts.ms ?? 4000);
+  const ms = opts.ms ?? 4000;
+  if (Number.isFinite(ms)) toastTimer = setTimeout(() => (t.hidden = true), ms);
 }
 
 export function formatDuration(seconds: number): string {

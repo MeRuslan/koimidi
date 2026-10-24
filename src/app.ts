@@ -61,6 +61,9 @@ export class App {
     addEventListener('beforeunload', (e) => {
       if (this.practice.hasUnsavedTake()) e.preventDefault();
     });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.practice.flushProgress();
+    });
 
     const unlock = () => this.synth.unlock();
     addEventListener('pointerdown', unlock, { capture: true });

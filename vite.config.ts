@@ -70,5 +70,7 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['tests/**/*.test.ts'],
+    // the video tests track synthetic frames: a few seconds on a laptop, two to three times that on a CI runner
+    testTimeout: 30000,
   },
 });

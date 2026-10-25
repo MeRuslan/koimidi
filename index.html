@@ -1,247 +1,330 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="paper">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>koimidi — free piano trainer</title>
 <meta name="description" content="Free piano trainer for MIDI keyboards in the browser: falling notes with finger numbers, waits for the right key, built-in sound. No sign-up, files never leave your browser.">
-<meta name="theme-color" content="#04111d">
+<meta name="theme-color" content="#f1ece2">
 <meta property="og:title" content="koimidi — free piano trainer">
 <meta property="og:description" content="Falling notes with finger numbers for your MIDI keyboard. Free, no sign-up, files stay in your browser.">
 <link rel="icon" href="./favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="koimidi">
+<script>
+  // the look before the first paint, so a dark system does not flash paper
+  try {
+    var s = JSON.parse(localStorage.getItem('koimidi:settings') || '{}').theme || 'auto';
+    if (s === 'auto') s = matchMedia('(prefers-color-scheme: dark)').matches ? 'lacquer' : 'paper';
+    document.documentElement.dataset.theme = s;
+  } catch (e) {}
+</script>
 <script type="module" src="/src/main.ts"></script>
 </head>
 <body>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7.5 5.2v13.6L19 12z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h3.4v14H7zM13.6 5H17v14h-3.4z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4.2h4.2"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-metro" viewBox="0 0 24 24"><path d="M9.2 3.5h5.6L19 20.5H5z"/><path d="M7.3 15h9.4"/><path d="M12 15l5.5-9.5"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 20v-8"/><path d="M10.5 20V5"/><path d="M16 20v-5.5"/><path d="M21 20H3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M19 7h1M4 17h3M13 17h7"/><circle cx="16" cy="7" r="2.4"/><circle cx="10" cy="17" r="2.4"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4"/><path d="m7 8.5 5-4.5 5 4.5"/><path d="M4.5 14.5v5h15v-5"/></symbol>
+  <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10 9.3v5.4l4.6-2.7z" fill="currentColor"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></symbol>
+  <symbol id="i-loop" viewBox="0 0 24 24"><path d="M16.5 3.5l3 3-3 3"/><path d="M4.5 11.5v-1a4 4 0 0 1 4-4h11"/><path d="M7.5 20.5l-3-3 3-3"/><path d="M19.5 12.5v1a4 4 0 0 1-4 4h-11"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4.5 12h15"/><path d="m13.5 6 6 6-6 6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M10 7V4.5h4V7"/><path d="M7 7l.8 12.5h8.4L17 7"/></symbol>
+  <symbol id="i-keys" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v8M12 13v6M16 5v8M8 13v6M16 13v6"/><path d="M7 5h2v8H7zM15 5h2v8h-2z" fill="currentColor"/></symbol>
+</svg>
+
 <!-- ===== Home ===== -->
 <section id="home" class="screen home">
-  <header class="home-top">
-    <a class="brand" href="./" aria-label="koimidi">koi<span class="dot">·</span>midi</a>
-    <nav class="home-nav">
-      <button id="installBtn" type="button" class="ghost" data-i18n="install" data-i18n-title="install.title" hidden></button>
-      <button id="langToggle" type="button" class="ghost" aria-label="Language">EN</button>
-      <a class="ghost link" href="https://github.com/MeRuslan/koimidi" target="_blank" rel="noopener">GitHub</a>
+  <header class="masthead">
+    <a class="brand" href="./" aria-label="koimidi"><span class="brand-mark" aria-hidden="true"></span>koimidi</a>
+    <nav class="masthead-nav">
+      <button id="installBtn" type="button" class="btn ghost sm" data-i18n="install" data-i18n-title="install.title" hidden></button>
+      <button id="langToggle" type="button" class="btn ghost sm" aria-label="Language">EN</button>
+      <a class="btn ghost sm" href="https://github.com/MeRuslan/koimidi" target="_blank" rel="noopener">GitHub</a>
     </nav>
   </header>
 
   <main class="home-main">
     <section class="hero">
-      <h1 data-i18n="app.tagline"></h1>
-      <p class="sub" data-i18n="app.sub"></p>
-      <ul class="facts">
-        <li data-i18n="facts.free"></li>
-        <li data-i18n="facts.noSignup"></li>
-        <li data-i18n="facts.local"></li>
-      </ul>
-      <div class="open">
-        <button id="openBtn" type="button" class="primary big">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v3h16v-3"/><path d="M12 4v12"/><path d="m7 9 5-5 5 5"/></svg>
-          <span data-i18n="open.button"></span>
-        </button>
-        <button id="videoBtn" type="button" class="big">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z" fill="currentColor"/></svg>
-          <span data-i18n="video.button"></span>
-        </button>
-        <span class="drop-hint" data-i18n="open.drop"></span>
+      <div class="hero-text">
+        <p class="overline" data-i18n="app.overline"></p>
+        <h1 class="hero-title" data-i18n-html="app.title"></h1>
+        <p class="hero-sub" data-i18n="app.sub"></p>
+        <div class="hero-actions">
+          <button id="openBtn" type="button" class="btn primary lg">
+            <svg class="i" aria-hidden="true"><use href="#i-upload"/></svg>
+            <span data-i18n="open.button"></span>
+          </button>
+          <button id="videoBtn" type="button" class="btn lg">
+            <svg class="i" aria-hidden="true"><use href="#i-video"/></svg>
+            <span data-i18n="video.button"></span>
+          </button>
+        </div>
+        <p class="fine" data-i18n="open.formats"></p>
+        <div id="homeMidi" class="device" role="status"></div>
+        <p id="browserHint" class="fine warn" data-i18n="browser.hint" hidden></p>
       </div>
-      <p class="fine" data-i18n="open.formats"></p>
-      <p id="homeMidi" class="status-line"></p>
-      <p id="browserHint" class="fine warn" data-i18n="browser.hint" hidden></p>
+      <figure class="hero-art" id="heroArt" aria-hidden="true"></figure>
     </section>
 
-    <section id="recent" class="block" hidden>
-      <h2 data-i18n="recent.title"></h2>
-      <ul id="recentList" class="list"></ul>
-      <p class="fine" data-i18n="recent.note"></p>
+    <section id="continue" class="continue-slot" hidden></section>
+
+    <section id="recent" class="shelf" hidden>
+      <header class="shelf-head">
+        <h2 data-i18n="recent.title"></h2>
+        <p class="fine" data-i18n="recent.note"></p>
+      </header>
+      <ol id="recentList" class="toc"></ol>
     </section>
 
-    <section class="block">
-      <h2 data-i18n="library.title"></h2>
-      <ul id="libraryList" class="cards"></ul>
-      <p class="fine" data-i18n="library.note"></p>
+    <section class="shelf">
+      <header class="shelf-head">
+        <h2 data-i18n="library.title"></h2>
+        <p class="fine" data-i18n="library.note"></p>
+      </header>
+      <div id="libraryList" class="toc-groups"></div>
     </section>
   </main>
 
-  <footer class="home-foot">
+  <footer class="colophon">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span>koimidi <span id="version"></span></span>
     <span data-i18n="footer.privacy"></span>
-    <span class="sep">·</span>
     <a href="https://github.com/MeRuslan/koimidi" target="_blank" rel="noopener" data-i18n="footer.source"></a>
-    <span class="sep">·</span>
     <a href="https://github.com/MeRuslan/koimidi/blob/main/LICENSE" target="_blank" rel="noopener" data-i18n="footer.license"></a>
-    <span class="sep">·</span>
-    <span id="version"></span>
   </footer>
 </section>
 
 <!-- ===== Practice ===== -->
 <section id="practice" class="screen practice" hidden>
-  <header class="bar">
-    <button id="back" type="button" class="ghost icon-btn" data-i18n-title="back">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
-    </button>
-    <div class="piece">
-      <b id="pieceTitle"></b>
-      <small id="pieceComposer"></small>
+  <aside class="rail">
+    <div class="rail-head">
+      <button id="back" type="button" class="back-link" data-i18n-title="back">
+        <svg class="i" aria-hidden="true"><use href="#i-back"/></svg><span data-i18n="back"></span>
+      </button>
+      <h1 id="pieceTitle" class="piece-title"></h1>
+      <p id="pieceComposer" class="piece-composer"></p>
     </div>
-    <button id="play" type="button" class="primary"></button>
-    <button id="restart" type="button" class="icon-btn" data-i18n-title="restart">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
-    </button>
-    <button id="rec" type="button" class="icon-btn rec-btn" data-i18n-title="record" aria-pressed="false">
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="6" fill="currentColor"/></svg>
-      <span id="recTime" class="rec-time" hidden></span>
-    </button>
-    <div class="seg" role="radiogroup" aria-label="Mode">
-      <label><input type="radio" name="mode" value="learn"><span data-i18n="mode.learn"></span></label>
-      <label><input type="radio" name="mode" value="tempo"><span data-i18n="mode.tempo"></span></label>
-      <label><input type="radio" name="mode" value="listen"><span data-i18n="mode.listen"></span></label>
+
+    <div class="rail-body">
+      <div class="field">
+        <span class="label" data-i18n="mode"></span>
+        <div class="seg modes" role="radiogroup" data-i18n-aria="mode">
+          <label><input type="radio" name="mode" value="learn"><span data-i18n="mode.learn"></span></label>
+          <label><input type="radio" name="mode" value="tempo"><span data-i18n="mode.tempo"></span></label>
+          <label><input type="radio" name="mode" value="listen"><span data-i18n="mode.listen"></span></label>
+        </div>
+        <p id="modeHint" class="field-note"></p>
+      </div>
+
+      <div class="transport">
+        <button id="play" type="button" class="btn primary play" data-i18n-title="play.title">
+          <svg class="i i-play" aria-hidden="true"><use href="#i-play"/></svg>
+          <svg class="i i-pause" aria-hidden="true"><use href="#i-pause"/></svg>
+          <span id="playLabel"></span>
+        </button>
+        <button id="restart" type="button" class="btn icon" data-i18n-title="restart">
+          <svg class="i" aria-hidden="true"><use href="#i-restart"/></svg>
+        </button>
+        <button id="rec" type="button" class="btn icon rec" data-i18n-title="record" aria-pressed="false">
+          <svg class="i" aria-hidden="true"><use href="#i-rec"/></svg>
+          <span id="recTime" class="rec-time" hidden></span>
+        </button>
+      </div>
+
+      <div id="takeRow" class="take" role="status" hidden>
+        <div class="take-head"><span class="rec-dot" aria-hidden="true"></span><span id="takeText" class="take-text"></span></div>
+        <div class="take-actions">
+          <button id="takeStop" type="button" class="btn sm" data-i18n="take.stop"></button>
+          <button id="takePlay" type="button" class="btn sm"></button>
+          <button id="takeSave" type="button" class="btn primary sm" data-i18n="take.save"></button>
+          <button id="takeDiscard" type="button" class="btn ghost sm" data-i18n="take.discard"></button>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-head">
+          <span class="label" data-i18n="tempo"></span>
+          <span id="tempoVal" class="readout"></span>
+        </div>
+        <div class="tempo-row">
+          <button id="tempoDown" type="button" class="btn icon sm" data-i18n-title="tempo.slower"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg></button>
+          <input id="tempo" type="range" min="20" max="100" step="5" value="50" data-i18n-aria="tempo">
+          <button id="tempoUp" type="button" class="btn icon sm" data-i18n-title="tempo.faster"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
+          <button id="metro" type="button" class="btn icon sm toggle" data-i18n-title="metronome" aria-pressed="false" hidden>
+            <svg class="i" aria-hidden="true"><use href="#i-metro"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="field" id="hands" hidden>
+        <span class="label" data-i18n="hands"></span>
+        <div class="seg" role="radiogroup" data-i18n-aria="hands">
+          <label><input type="radio" name="hand" value="L"><span data-i18n="hand.L"></span></label>
+          <label><input type="radio" name="hand" value="both"><span data-i18n="hand.both"></span></label>
+          <label><input type="radio" name="hand" value="R"><span data-i18n="hand.R"></span></label>
+        </div>
+        <label class="check" id="accompRow" data-i18n-title="accomp.title" hidden>
+          <input type="checkbox" id="accomp" class="switch"><span data-i18n="accomp"></span>
+        </label>
+      </div>
     </div>
-    <button id="metro" type="button" class="icon-btn toggle-btn" data-i18n-title="metronome" aria-pressed="false" hidden>
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l4 18H5L9 3z"/><path d="M7.5 15h9"/><path d="M12 15l5-9"/></svg>
-    </button>
-    <div class="group tempo">
-      <span class="label" data-i18n="tempo"></span>
-      <input id="tempo" type="range" min="20" max="100" step="5" value="50" aria-label="Tempo">
-      <span id="tempoVal" class="val"></span>
+
+    <div class="rail-now" id="now">
+      <div id="handmap" class="handmap"></div>
+      <div id="next" class="next" aria-live="polite"></div>
+      <div id="stats" class="stats"></div>
+      <p id="nowTip" class="fine now-tip" data-i18n="legend.edit"></p>
     </div>
-    <div class="seg hands" id="hands" role="radiogroup" aria-label="Hand" hidden>
-      <label><input type="radio" name="hand" value="R"><span data-i18n="hand.R"></span></label>
-      <label><input type="radio" name="hand" value="L"><span data-i18n="hand.L"></span></label>
-      <label><input type="radio" name="hand" value="both"><span data-i18n="hand.both"></span></label>
+
+    <div class="rail-foot">
+      <span id="midi" class="status"></span>
+      <button id="progressBtn" type="button" class="btn icon ghost" data-i18n-title="progress" aria-haspopup="dialog" aria-expanded="false">
+        <svg class="i" aria-hidden="true"><use href="#i-chart"/></svg>
+      </button>
+      <button id="settingsBtn" type="button" class="btn icon ghost" data-i18n-title="settings" aria-haspopup="dialog" aria-expanded="false">
+        <svg class="i" aria-hidden="true"><use href="#i-sliders"/></svg>
+      </button>
     </div>
-    <label class="toggle" id="accompRow" data-i18n-title="accomp.title" hidden><input type="checkbox" id="accomp"><span data-i18n="accomp"></span></label>
-    <div class="group range">
+  </aside>
+
+  <div class="timeline">
+    <div id="tlTrack" class="tl-track" role="group" data-i18n-aria="timeline.label" data-i18n-title="timeline.label"></div>
+    <div class="tl-side">
       <span class="label" data-i18n="bars"></span>
-      <input id="rangeFrom" type="number" min="1" step="1" inputmode="numeric" aria-label="From bar">
+      <input id="rangeFrom" type="number" min="1" step="1" inputmode="numeric" data-i18n-aria="bars.from">
       <span class="dash">–</span>
-      <input id="rangeTo" type="number" min="1" step="1" inputmode="numeric" aria-label="To bar">
-      <button id="rangeAll" type="button" class="ghost small" data-i18n="bars.all"></button>
-      <label class="toggle"><input type="checkbox" id="loop"><span data-i18n="loop"></span></label>
+      <input id="rangeTo" type="number" min="1" step="1" inputmode="numeric" data-i18n-aria="bars.to">
+      <button id="rangeAll" type="button" class="btn ghost sm" data-i18n="bars.all"></button>
+      <label class="check sm" data-i18n-title="loop.title"><input type="checkbox" id="loop" class="switch"><span data-i18n="loop"></span></label>
     </div>
-    <div class="spacer"></div>
-    <button id="progressBtn" type="button" class="icon-btn" data-i18n-title="progress" aria-haspopup="dialog" aria-expanded="false">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>
-    </button>
-    <button id="settingsBtn" type="button" class="icon-btn" data-i18n-title="settings" aria-haspopup="dialog" aria-expanded="false">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-    </button>
-    <span id="midi" class="status"></span>
-  </header>
-  <div id="sectionsRow" class="sections" hidden>
-    <span class="label" data-i18n="sections"></span>
-    <div id="sections" class="chips"></div>
-  </div>
-  <div id="takeRow" class="take" role="status" hidden>
-    <span class="rec-dot" aria-hidden="true"></span>
-    <span id="takeText" class="take-text"></span>
-    <button id="takeStop" type="button" class="small" data-i18n="take.stop"></button>
-    <button id="takePlay" type="button" class="small"></button>
-    <button id="takeSave" type="button" class="primary small" data-i18n="take.save"></button>
-    <button id="takeDiscard" type="button" class="ghost small" data-i18n="take.discard"></button>
   </div>
 
   <main class="stage-wrap">
-    <canvas id="stage" aria-label="Falling notes and keyboard"></canvas>
-    <div class="hud">
-      <div id="next" class="next"></div>
-      <div id="stats" class="stats"></div>
-    </div>
-    <div id="hint" class="hint" hidden></div>
+    <canvas id="stage" data-i18n-aria="stage.label"></canvas>
+    <div id="hint" class="hint" role="status" hidden></div>
 
     <div id="picker" class="picker" role="dialog" hidden>
       <div class="picker-head"><b id="pickerNote"></b><span id="pickerSrc"></span></div>
       <div id="pickerFingers" class="picker-fingers"></div>
       <div class="picker-foot">
-        <button id="pickerReset" type="button" class="ghost small" data-i18n="picker.reset"></button>
+        <button id="pickerReset" type="button" class="btn ghost sm" data-i18n="picker.reset"></button>
         <span class="fine" data-i18n="picker.keys"></span>
       </div>
     </div>
-
-    <div id="progress" class="popover progress" role="dialog" aria-label="Progress" hidden></div>
-
-    <div id="settings" class="popover" role="dialog" aria-label="Settings" hidden>
-      <div class="sect" data-i18n="settings.sect.piece"></div>
-      <div class="actions">
-        <button id="exportXml" type="button" class="small" data-i18n="settings.export"></button>
-        <button id="resetFingers" type="button" class="ghost small"></button>
-        <button id="resetPiece" type="button" class="ghost small" data-i18n="settings.reset"></button>
-      </div>
-      <label class="row" id="midiSplitRow"><span data-i18n="settings.midiSplit"></span>
-        <select id="midiSplit">
-          <option value="auto" data-i18n="settings.midiSplit.auto"></option>
-          <option value="none" data-i18n="settings.midiSplit.none"></option>
-          <option value="middleC" data-i18n="settings.midiSplit.middleC"></option>
-        </select>
-      </label>
-      <div class="sect" data-i18n="settings.sect.sound"></div>
-      <label class="row"><span data-i18n="settings.instrument"></span><select id="instrument"></select></label>
-      <p id="instrumentNote" class="row-note" hidden></p>
-      <label class="row" id="patchRow" hidden><span data-i18n="sound.patch"></span><select id="patch"></select></label>
-      <div class="actions" id="packActions" hidden><button id="removePack" type="button" class="ghost small" data-i18n="sound.remove"></button></div>
-      <input id="packFile" type="file" accept=".sf2,.sf3" hidden>
-      <label class="row"><input type="checkbox" id="sound"><span data-i18n="settings.sound"></span></label>
-      <label class="row"><span data-i18n="settings.volume"></span><input id="volume" type="range" min="0" max="1" step="0.05"></label>
-      <label class="row"><input type="checkbox" id="countIn"><span data-i18n="settings.countIn"></span></label>
-      <div class="sect" data-i18n="settings.sect.keyboard"></div>
-      <label class="row"><span data-i18n="settings.keyboard"></span>
-        <select id="keyboard"></select>
-      </label>
-      <label class="row"><input type="checkbox" id="anyOct"><span data-i18n="settings.anyOctave"></span></label>
-      <div class="sect" data-i18n="settings.sect.display"></div>
-      <label class="row"><span data-i18n="settings.noteNames"></span>
-        <select id="noteNames">
-          <option value="auto" data-i18n="settings.noteNames.auto"></option>
-          <option value="solfege" data-i18n="settings.noteNames.solfege"></option>
-          <option value="letters" data-i18n="settings.noteNames.letters"></option>
-        </select>
-      </label>
-      <label class="row"><span data-i18n="settings.lang"></span>
-        <select id="lang">
-          <option value="en">English</option>
-          <option value="ru">Русский</option>
-        </select>
-      </label>
-    </div>
   </main>
 
-  <footer class="legend">
-    <span class="fl"><i style="background:#ff8a6b">1</i><span data-i18n="finger.1"></span></span>
-    <span class="fl"><i style="background:#ffcf5a">2</i><span data-i18n="finger.2"></span></span>
-    <span class="fl"><i style="background:#48d6c6">3</i><span data-i18n="finger.3"></span></span>
-    <span class="fl"><i style="background:#8ea8ff">4</i><span data-i18n="finger.4"></span></span>
-    <span class="fl"><i style="background:#e590ff">5</i><span data-i18n="finger.5"></span></span>
-    <span id="legendLeft" class="fl dim" data-i18n="legend.left" hidden></span>
-    <span id="legendAcc" class="fl dim" data-i18n="legend.acc" hidden></span>
-    <span class="fl edit" data-i18n="legend.edit"></span>
-    <span class="keys" data-i18n="shortcuts"></span>
-  </footer>
+  <div id="progress" class="sheet progress" role="dialog" data-i18n-aria="progress" hidden></div>
+
+  <div id="settings" class="sheet" role="dialog" data-i18n-aria="settings" hidden>
+    <header class="sheet-head">
+      <h2 data-i18n="settings"></h2>
+      <button type="button" class="btn icon ghost sheet-close" data-close="settings" data-i18n-title="close"><svg class="i" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="sheet-body">
+      <section class="group">
+        <h3 data-i18n="settings.sect.look"></h3>
+        <div id="themes" class="themes" role="radiogroup" data-i18n-aria="settings.sect.look"></div>
+        <label class="row"><span data-i18n="settings.noteNames"></span>
+          <select id="noteNames">
+            <option value="auto" data-i18n="settings.noteNames.auto"></option>
+            <option value="solfege" data-i18n="settings.noteNames.solfege"></option>
+            <option value="letters" data-i18n="settings.noteNames.letters"></option>
+          </select>
+        </label>
+        <label class="row"><span data-i18n="settings.lang"></span>
+          <select id="lang">
+            <option value="en">English</option>
+            <option value="ru">Русский</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="group">
+        <h3 data-i18n="settings.sect.sound"></h3>
+        <label class="row stack"><span data-i18n="settings.instrument"></span><select id="instrument"></select></label>
+        <p id="instrumentNote" class="row-note" hidden></p>
+        <label class="row stack" id="patchRow" hidden><span data-i18n="sound.patch"></span><select id="patch"></select></label>
+        <div class="row actions" id="packActions" hidden><button id="removePack" type="button" class="btn ghost sm" data-i18n="sound.remove"></button></div>
+        <input id="packFile" type="file" accept=".sf2,.sf3" hidden>
+        <label class="row"><span data-i18n="settings.sound"></span><input type="checkbox" id="sound" class="switch"></label>
+        <label class="row"><span data-i18n="settings.volume"></span><input id="volume" type="range" min="0" max="1" step="0.05"></label>
+        <label class="row"><span data-i18n="settings.countIn"></span><input type="checkbox" id="countIn" class="switch"></label>
+      </section>
+
+      <section class="group">
+        <h3 data-i18n="settings.sect.keyboard"></h3>
+        <label class="row stack"><span data-i18n="settings.keyboard"></span><select id="keyboard"></select></label>
+        <label class="row"><span data-i18n="settings.anyOctave"></span><input type="checkbox" id="anyOct" class="switch"></label>
+      </section>
+
+      <section class="group">
+        <h3 data-i18n="settings.sect.piece"></h3>
+        <label class="row stack" id="midiSplitRow"><span data-i18n="settings.midiSplit"></span>
+          <select id="midiSplit">
+            <option value="auto" data-i18n="settings.midiSplit.auto"></option>
+            <option value="none" data-i18n="settings.midiSplit.none"></option>
+            <option value="middleC" data-i18n="settings.midiSplit.middleC"></option>
+          </select>
+        </label>
+        <div class="row actions">
+          <button id="exportXml" type="button" class="btn sm" data-i18n="settings.export"></button>
+          <button id="resetFingers" type="button" class="btn ghost sm"></button>
+          <button id="resetPiece" type="button" class="btn ghost sm" data-i18n="settings.reset"></button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h3 data-i18n="settings.sect.keys"></h3>
+        <dl class="shortcuts">
+          <dt><kbd data-i18n="kbd.space"></kbd></dt><dd data-i18n="keys.play"></dd>
+          <dt><kbd>Enter</kbd></dt><dd data-i18n="keys.restart"></dd>
+          <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd data-i18n="keys.loop"></dd>
+          <dt><kbd>A</kbd>…<kbd>L</kbd></dt><dd data-i18n="keys.notes"></dd>
+          <dt><kbd>Z</kbd> <kbd>X</kbd></dt><dd data-i18n="keys.octave"></dd>
+          <dt><kbd>1</kbd>…<kbd>5</kbd></dt><dd data-i18n="keys.finger"></dd>
+          <dt><kbd>Esc</kbd></dt><dd data-i18n="keys.back"></dd>
+        </dl>
+      </section>
+    </div>
+  </div>
 </section>
 
 <!-- ===== From a video ===== -->
 <section id="vimport" class="screen vimport" hidden>
-  <header class="bar">
-    <button id="vBack" type="button" class="ghost icon-btn" data-i18n-title="back">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+  <header class="masthead">
+    <button id="vBack" type="button" class="back-link" data-i18n-title="back">
+      <svg class="i" aria-hidden="true"><use href="#i-back"/></svg><span data-i18n="back"></span>
     </button>
-    <div class="piece">
+    <div class="masthead-title">
       <b data-i18n="video.title"></b>
       <small data-i18n="video.sub"></small>
     </div>
   </header>
   <main class="vi-main">
-    <section id="viSource" class="vi-card">
+    <section id="viSource" class="vi-card vi-source">
+      <p class="overline" data-i18n="video.title"></p>
       <h2 data-i18n="video.h.source"></h2>
       <form id="viLinkForm" class="vi-link">
         <input id="viLink" type="text" inputmode="url" autocomplete="off" spellcheck="false" data-i18n-placeholder="video.link.ph" aria-label="YouTube">
-        <button type="submit" class="primary" data-i18n="video.link.open"></button>
+        <button type="submit" class="btn primary lg" data-i18n="video.link.open"></button>
       </form>
       <p id="viLinkNote" class="fine warn"></p>
       <div class="vi-alt">
         <span class="fine" data-i18n="video.or"></span>
-        <button id="viTab" type="button" class="small" data-i18n="video.tab"></button>
-        <button id="viFile" type="button" class="small" data-i18n="video.file"></button>
+        <button id="viTab" type="button" class="btn" data-i18n="video.tab"></button>
+        <button id="viFile" type="button" class="btn" data-i18n="video.file"></button>
         <input id="viFileInput" type="file" accept="video/*,.mp4,.webm,.mkv,.mov" hidden>
       </div>
       <p class="vi-how" data-i18n="video.how"></p>
@@ -255,23 +338,23 @@
         <div id="viProgressRow" class="vi-progress" hidden><div id="viProgress"></div></div>
         <canvas id="viSeen" class="vi-seen" aria-hidden="true" hidden></canvas>
         <div class="vi-actions">
-          <button id="viStart" type="button" class="primary" hidden></button>
+          <button id="viStart" type="button" class="btn primary" hidden></button>
           <label id="viSpeedRow" class="vi-speed" hidden><span data-i18n="video.speed"></span>
             <select id="viSpeed">
               <option value="1" data-i18n="video.speed.1"></option>
               <option value="0.5" data-i18n="video.speed.05"></option>
             </select>
           </label>
-          <button id="viStop" type="button" class="primary" data-i18n="video.stop" hidden></button>
-          <button id="viAudio" type="button" class="small" data-i18n="video.audio.button" hidden></button>
-          <button id="viAnother" type="button" class="ghost small" data-i18n="video.another"></button>
+          <button id="viStop" type="button" class="btn primary" data-i18n="video.stop" hidden></button>
+          <button id="viAudio" type="button" class="btn sm" data-i18n="video.audio.button" hidden></button>
+          <button id="viAnother" type="button" class="btn ghost sm" data-i18n="video.another"></button>
         </div>
       </div>
     </section>
 
-    <section id="viResult" class="vi-card" hidden>
-      <h2 data-i18n="video.result"></h2>
-      <label class="vi-name"><span data-i18n="video.name"></span><input id="viName" type="text" autocomplete="off"></label>
+    <section id="viResult" class="vi-card vi-result" hidden>
+      <p class="overline" data-i18n="video.result"></p>
+      <label class="vi-name"><span class="label" data-i18n="video.name"></span><input id="viName" type="text" autocomplete="off"></label>
       <p id="viSummary" class="vi-summary"></p>
       <p id="viDraft" class="fine warn" data-i18n="video.draft" hidden></p>
       <canvas id="viRoll" class="vi-roll" aria-hidden="true"></canvas>
@@ -288,27 +371,27 @@
           </select>
         </label>
         <div class="vi-row"><span data-i18n="video.shift"></span>
-          <button id="viEarlier" type="button" class="small" data-i18n="video.shift.earlier"></button>
-          <button id="viLater" type="button" class="small" data-i18n="video.shift.later"></button>
+          <button id="viEarlier" type="button" class="btn sm" data-i18n="video.shift.earlier"></button>
+          <button id="viLater" type="button" class="btn sm" data-i18n="video.shift.later"></button>
         </div>
         <div class="vi-row" id="viOctaveRow" hidden><span data-i18n="video.octave"></span>
-          <button id="viOctDown" type="button" class="small">−</button>
+          <button id="viOctDown" type="button" class="btn icon sm"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg></button>
           <b id="viOctaveVal" class="vi-oct"></b>
-          <button id="viOctUp" type="button" class="small">+</button>
+          <button id="viOctUp" type="button" class="btn icon sm"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
           <span class="fine" data-i18n="video.octave.note"></span>
         </div>
       </div>
       <div class="vi-actions">
-        <button id="viOpen" type="button" class="primary" data-i18n="video.open"></button>
-        <button id="viListen" type="button" class="small" data-i18n="video.listen"></button>
-        <button id="viAgain" type="button" class="ghost small" data-i18n="video.again"></button>
+        <button id="viOpen" type="button" class="btn primary lg" data-i18n="video.open"></button>
+        <button id="viListen" type="button" class="btn" data-i18n="video.listen"></button>
+        <button id="viAgain" type="button" class="btn ghost" data-i18n="video.again"></button>
       </div>
     </section>
   </main>
 </section>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
-<div id="dropOverlay" class="drop-overlay" hidden><div data-i18n="open.button"></div></div>
+<div id="dropOverlay" class="drop-overlay" hidden><div data-i18n="open.dropHere"></div></div>
 <input id="file" type="file" accept=".mid,.midi,.xml,.musicxml,.mxl,audio/midi,audio/x-midi,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml" hidden>
 </body>
 </html>

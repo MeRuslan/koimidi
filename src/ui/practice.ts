@@ -1,12 +1,18 @@
-/** Practice screen: transport, mode, tempo, hands, loop range, HUD, hints, finger editing, recording, settings popover. */
+/**
+ * Practice screen: the rail on the left (piece, mode, transport, tempo, hands,
+ * the next notes on a picture of the hands), the strip of bars above the
+ * stage (loop range), the stage itself, hints, finger editing, recording, and
+ * the settings and progress sheets.
+ */
 import type { App, PieceInfo } from '../app';
-import { fingerName, keysLabel, noteName, t, type Key } from '../i18n';
+import { fingerName, getLang, keysLabel, noteName, t, type Key } from '../i18n';
+import { libraryItems } from '../library';
 import { ComputerKeyboard } from '../input/keyboard';
 import { KEYBOARD_SIZES, type KeyboardChoice } from '../input/profile';
 import { Engine, type HandSel, type Mode, type PassStats, type Summary } from '../practice/engine';
 import { addPass, emptyProgress, type PassResult, type PieceProgress } from '../practice/progress';
 import { Recorder, takeToMidi, type Take } from '../practice/recorder';
-import { FINGER_COLORS, Stage } from '../render/stage';
+import { Stage } from '../render/stage';
 import { applyEdits, clearEdits, setFinger, suggestedSource, type FingerEdits } from '../score/edits';
 import { bpmAt, measureAt, type Finger, type Score, type ScoreNote } from '../score/model';
 import type { MidiSplit } from '../score/midi';
@@ -15,10 +21,12 @@ import { scoreFromStored } from '../importer';
 import { getFile, putFingerings } from '../storage/files';
 import { deleteProgress, getProgress, putProgress } from '../storage/progress';
 import { clearPieceSettings, loadPieceSettings, savePieceSettings } from '../storage/settings';
-import { $, download, el, formatDuration, safeFileName, toast } from './dom';
+import { fingerColor, onThemeChange, THEMES, type ThemeChoice } from '../theme';
+import { $, download, el, formatDuration, paintRange, safeFileName, toast } from './dom';
+import { HandMap } from './hands';
 import { percent, ProgressPanel } from './progress-panel';
+import { Timeline } from './timeline';
 
-const NO_FINGER = '#9fb4c4';
 const DIGITS: Record<string, Finger> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5 };
 
 export class PracticeView {
@@ -47,9 +55,20 @@ export class PracticeView {
   /** result of the last complete pass, for the end-of-piece hint */
   private lastPass: PassResult | null = null;
   private panel: ProgressPanel;
+  private timeline: Timeline;
+  private hands: HandMap;
+  /** show which computer keys play which notes (no MIDI keyboard) */
+  private letters = false;
 
   constructor(private app: App) {
     this.stage = new Stage($<HTMLCanvasElement>('stage'));
+    this.timeline = new Timeline($('tlTrack'), (from, to) => this.setRange(from, to));
+    this.hands = new HandMap($('handmap'));
+    onThemeChange(() => {
+      this.stage.refreshPalette();
+      this.lastNext = '';
+      this.dirty = true;
+    });
     this.panel = new ProgressPanel(
       (m) => {
         this.setRange(m, m);
@@ -78,12 +97,14 @@ export class PracticeView {
     if (this.progress?.id !== info.id) {
       this.progress = null;
       void getProgress(info.id).then((p) => {
-        if (this.info?.id === info.id) this.progress = p;
+        if (this.info?.id !== info.id) return;
+        this.progress = p;
+        this.timeline.setHeat(p);
       });
     }
     const e = new Engine(score, {
       flash: (p, kind) => this.stage.flash(p, kind),
-      ripple: (p, n) => this.stage.ripple(p, n.finger ? FINGER_COLORS[n.finger] : NO_FINGER),
+      ripple: (p, n) => this.stage.ripple(p, fingerColor(n.finger)),
       sound: (p, v, secs) => {
         this.app.synth.unlock();
         this.app.synth.noteOn(p, v, secs);
@@ -111,17 +132,17 @@ export class PracticeView {
     this.stage.profile = this.app.keyboardRange();
     this.stage.attach(score, e);
     this.kb.fitTo(e.activeNotes.map((n) => n.pitch));
+    this.timeline.build(score);
+    this.timeline.setHeat(this.progress?.id === info.id ? this.progress : null);
+    this.hands.build(score.hands);
     this.active = true;
     this.closeSettings();
     this.closePicker();
     this.hideHint();
     this.lastNext = this.lastStats = '';
     this.syncControls();
-    this.buildSections();
     this.renderTake();
-    $('pieceTitle').textContent = score.title;
-    $('pieceComposer').textContent = score.composer ?? '';
-    document.title = `${score.title} · koimidi`;
+    this.renderTitle();
     this.warnFit();
     this.dirty = true;
   }
@@ -153,9 +174,33 @@ export class PracticeView {
     this.lastNext = this.lastStats = '';
     $('picker').setAttribute('aria-label', t('picker.label'));
     this.syncControls();
-    this.buildSections();
+    this.renderTitle();
+    if (this.score) {
+      this.timeline.build(this.score);
+      this.timeline.setHeat(this.progress);
+      this.hands.build(this.score.hands);
+    }
     this.renderTake();
+    this.renderThemes();
     this.refreshPanel();
+    this.dirty = true;
+  }
+
+  /** The piece's name in the rail and the tab; library pieces have Russian names too. */
+  private renderTitle(): void {
+    const score = this.score;
+    const info = this.info;
+    if (!score || !info) return;
+    const lib = info.source === 'library' && getLang() === 'ru' ? libraryItems().find((i) => i.id === info.id) : undefined;
+    const title = lib?.titleRu ?? score.title;
+    $('pieceTitle').textContent = title;
+    $('pieceComposer').textContent = lib?.composerRu ?? score.composer ?? '';
+    document.title = `${title} · koimidi`;
+  }
+
+  /** Letters of the computer keys on the on-screen keyboard: on while no MIDI keyboard is connected. */
+  showLetters(on: boolean): void {
+    this.letters = on;
     this.dirty = true;
   }
 
@@ -309,14 +354,19 @@ export class PracticeView {
       this.syncControls();
     });
     const tempo = $<HTMLInputElement>('tempo');
-    tempo.addEventListener('input', () => {
+    const setTempo = (pct: number) => {
       if (!this.engine) return;
-      this.engine.speed = +tempo.value / 100;
+      pct = Math.max(+tempo.min, Math.min(+tempo.max, Math.round(pct / 5) * 5));
+      tempo.value = String(pct);
+      this.engine.speed = pct / 100;
       s.speed = this.engine.speed;
       this.app.save();
       this.savePiece();
       this.renderTempo();
-    });
+    };
+    tempo.addEventListener('input', () => setTempo(+tempo.value));
+    $('tempoDown').addEventListener('click', () => setTempo(+tempo.value - 5));
+    $('tempoUp').addEventListener('click', () => setTempo(+tempo.value + 5));
     const from = $<HTMLInputElement>('rangeFrom');
     const to = $<HTMLInputElement>('rangeTo');
     const apply = () => this.setRange(parseInt(from.value, 10) || 1, parseInt(to.value, 10) || 1);
@@ -328,6 +378,7 @@ export class PracticeView {
       s.loop = loop.checked;
       this.app.save();
       if (this.engine) this.engine.loop = loop.checked;
+      this.syncControls();
     });
     const canvas = $<HTMLCanvasElement>('stage');
     canvas.addEventListener('pointerdown', (e) => {
@@ -361,7 +412,7 @@ export class PracticeView {
     const fingers = $('pickerFingers');
     for (let f = 1 as Finger; f <= 5; f = (f + 1) as Finger) {
       const b = el('button', { type: 'button', class: 'pf', 'data-f': String(f) }, [el('b', { text: String(f) })]);
-      b.style.setProperty('--c', FINGER_COLORS[f]);
+      b.style.setProperty('--c', `var(--f${f})`);
       b.addEventListener('click', () => this.chooseFinger(f));
       fingers.append(b);
     }
@@ -404,6 +455,8 @@ export class PracticeView {
     const btn = $('settingsBtn');
     const pop = $('settings');
     btn.addEventListener('click', () => (pop.hidden ? this.openSettings() : this.closeSettings()));
+    pop.querySelector('[data-close]')!.addEventListener('click', () => this.closeSettings());
+    this.renderThemes();
     addEventListener('pointerdown', (e) => {
       if (pop.hidden) return;
       const target = e.target as Node;
@@ -427,6 +480,7 @@ export class PracticeView {
     });
     const volume = $<HTMLInputElement>('volume');
     volume.addEventListener('input', () => {
+      paintRange(volume);
       s.volume = +volume.value;
       this.app.synth.setVolume(s.volume);
       this.app.save();
@@ -514,6 +568,7 @@ export class PracticeView {
     this.panel.close();
     $<HTMLInputElement>('sound').checked = s.sound;
     $<HTMLInputElement>('volume').value = String(s.volume);
+    paintRange($<HTMLInputElement>('volume'));
     $<HTMLInputElement>('countIn').checked = s.countIn;
     $<HTMLInputElement>('anyOct').checked = s.anyOctave;
     $<HTMLSelectElement>('noteNames').value = s.noteNames;
@@ -527,8 +582,35 @@ export class PracticeView {
     const reset = $('resetFingers');
     reset.hidden = edited === 0;
     reset.textContent = t('settings.resetFingers', { n: edited });
+    this.renderThemes();
     $('settings').hidden = false;
     $('settingsBtn').setAttribute('aria-expanded', 'true');
+  }
+
+  /** The looks, each as a small picture of the stage in its own colours. */
+  private renderThemes(): void {
+    const box = $('themes');
+    const current = this.app.settings.theme;
+    const choices: ThemeChoice[] = ['auto', ...THEMES];
+    box.replaceChildren(
+      ...choices.map((c) => {
+        const input = el('input', { type: 'radio', name: 'theme', value: c });
+        input.checked = c === current;
+        input.addEventListener('change', () => input.checked && this.app.setTheme(c));
+        const bars = [
+          ['18%', '34px', 1],
+          ['40%', '22px', 3],
+          ['63%', '40px', 4],
+          ['80%', '16px', 2],
+        ].map(([left, h, f]) => {
+          const i = el('i');
+          i.style.cssText = `left:${left};height:${h};background:var(--f${f})`;
+          return i;
+        });
+        const prev = el('span', { class: `theme-prev${c === 'auto' ? ' split' : ''}`, ...(c === 'auto' ? {} : { 'data-theme': c }) }, [...bars, el('span', { class: 'kb' })]);
+        return el('label', { class: 'theme' }, [input, prev, el('span', { class: 'theme-name', text: t(`theme.${c}` as Key) })]);
+      }),
+    );
   }
 
   private fillKeyboardSelect(): void {
@@ -553,16 +635,15 @@ export class PracticeView {
     const score = this.score;
     if (!e || !score) return;
     document.querySelectorAll<HTMLInputElement>('input[name=mode]').forEach((r) => (r.checked = r.value === e.mode));
+    $('modeHint').textContent = t(`mode.${e.mode}.hint` as Key);
     const metro = $('metro');
     metro.hidden = e.mode === 'learn';
     metro.setAttribute('aria-pressed', String(e.metronome));
     const hands = $('hands');
     hands.hidden = !(score.hands.R && score.hands.L);
     document.querySelectorAll<HTMLInputElement>('input[name=hand]').forEach((r) => (r.checked = r.value === e.hand));
-    $('legendLeft').hidden = e.hand !== 'both' || hands.hidden;
     $('accompRow').hidden = hands.hidden || e.hand === 'both';
     $<HTMLInputElement>('accomp').checked = e.accompany;
-    $('legendAcc').hidden = !e.accompanying;
     $<HTMLInputElement>('tempo').value = String(Math.round(e.speed * 100));
     this.renderTempo();
     const from = $<HTMLInputElement>('rangeFrom');
@@ -572,48 +653,29 @@ export class PracticeView {
     to.value = String(e.rangeMeasures[1]);
     $<HTMLInputElement>('loop').checked = e.loop;
     $('rangeAll').hidden = e.rangeMeasures[0] === 1 && e.rangeMeasures[1] === e.lastMeasure();
-    this.markSection();
+    this.timeline.setRange(e.rangeMeasures[0], e.rangeMeasures[1], e.loop);
     this.renderPlay();
   }
 
   private renderTempo(): void {
     const e = this.engine;
     if (!e || !this.score) return;
+    const tempo = $<HTMLInputElement>('tempo');
+    paintRange(tempo);
     const bpm = Math.round(bpmAt(this.score, 0) * e.speed);
-    $('tempoVal').textContent = `${Math.round(e.speed * 100)}% · ♩=${bpm}`;
+    $('tempoVal').innerHTML = `${Math.round(e.speed * 100)}% <small>· ♩ ${bpm}</small>`;
+    $('tempoDown').toggleAttribute('disabled', +tempo.value <= +tempo.min);
+    $('tempoUp').toggleAttribute('disabled', +tempo.value >= +tempo.max);
   }
 
   private renderPlay(): void {
-    const e = this.engine;
-    $('play').textContent = e?.playing ? `❚❚ ${t('pause')}` : `▶ ${t('play')}`;
-  }
-
-  private buildSections(): void {
-    const score = this.score;
-    const row = $('sectionsRow');
-    const box = $('sections');
-    box.replaceChildren();
-    const secs = score?.measures.filter((m) => m.section) ?? [];
-    row.hidden = secs.length < 2;
-    if (!score || secs.length < 2) return;
-    secs.forEach((m, i) => {
-      const next = secs[i + 1];
-      const to = next ? next.number - 1 : score.measures[score.measures.length - 1].number;
-      const chip = el('button', { type: 'button', class: 'chip', text: m.section!, title: `${m.section}: ${t('piece.barsRange', { from: m.number, to })}` });
-      chip.dataset.from = String(m.number);
-      chip.dataset.to = String(to);
-      chip.addEventListener('click', () => this.setRange(m.number, to));
-      box.append(chip);
-    });
-    this.markSection();
-  }
-
-  private markSection(): void {
-    const e = this.engine;
-    if (!e) return;
-    $('sections')
-      .querySelectorAll<HTMLButtonElement>('.chip')
-      .forEach((c) => c.classList.toggle('on', +c.dataset.from! === e.rangeMeasures[0] && +c.dataset.to! === e.rangeMeasures[1]));
+    const playing = !!this.engine?.playing;
+    const label = playing ? t('pause') : t('play');
+    const text = $('playLabel');
+    // called on every redrawn frame of the HUD: touch the DOM only when something changed
+    if (text.textContent === label) return;
+    $('play').classList.toggle('on', playing);
+    text.textContent = label;
   }
 
   /* ---------- finger editing ---------- */
@@ -697,20 +759,17 @@ export class PracticeView {
     }
     const r = addPass(p, stats);
     void putProgress(p);
+    if (this.info?.id === id) this.timeline.setHeat(p);
     if (r && this.info?.id === id) {
       this.lastPass = r;
       // with the loop on the next pass starts at once: show how this one went
-      if (this.engine?.loop) this.showHint(this.passText(r, stats.from, stats.to), 3500, true);
+      if (this.engine?.loop) this.showResult(r, this.passWhat(stats.from, stats.to), '', 3500);
     }
     this.refreshPanel();
   }
 
-  private passText(r: PassResult, from: number, to: number): string {
-    const e = this.engine!;
-    const what = from === 1 && to === e.lastMeasure() ? t('pass.whole') : t('pass.range', { from, to });
-    let text = t('pass.result', { what, acc: percent(r.accuracy) });
-    if (r.previousBest !== null) text += r.accuracy > r.previousBest + 1e-9 ? t('pass.best') : t('pass.bestWas', { best: percent(r.previousBest) });
-    return text;
+  private passWhat(from: number, to: number): string {
+    return from === 1 && to === this.engine!.lastMeasure() ? t('pass.whole') : t('pass.range', { from, to });
   }
 
   private refreshPanel(): void {
@@ -721,6 +780,7 @@ export class PracticeView {
     if (!this.info) return;
     this.progress = emptyProgress(this.info.id);
     void deleteProgress(this.info.id);
+    this.timeline.setHeat(this.progress);
     this.refreshPanel();
   }
 
@@ -818,6 +878,7 @@ export class PracticeView {
     const live = this.recorder.recording;
     rec.classList.toggle('on', live);
     rec.setAttribute('aria-pressed', String(live));
+    rec.querySelector('use')?.setAttribute('href', live ? '#i-stop' : '#i-rec');
     rec.title = t(live ? 'record.stop' : 'record');
     rec.setAttribute('aria-label', rec.title);
     time.hidden = !live;
@@ -829,7 +890,8 @@ export class PracticeView {
       $('takeText').textContent = t('take.ready', { time: formatDuration(this.take.duration), n: this.take.notes.length });
       $('takePlay').textContent = this.takeTimers.length ? `■ ${t('take.stopPlay')}` : `▶ ${t('take.play')}`;
     }
-    row.hidden = !live && !this.take;
+    // while recording the record button itself shows the time and stops it; the card is for the finished take
+    row.hidden = live || !this.take;
     $('takeStop').hidden = !live;
     for (const id of ['takePlay', 'takeSave', 'takeDiscard']) $(id).hidden = live;
   }
@@ -837,7 +899,9 @@ export class PracticeView {
   /* ---------- HUD & hints ---------- */
 
   private frame = (now: number): void => {
-    const dt = Math.min(0.1, (now - this.last) / 1000);
+    // asked first, so that one bad frame cannot stop the drawing for good
+    requestAnimationFrame(this.frame);
+    const dt = Math.max(0, Math.min(0.1, (now - this.last) / 1000));
     this.last = now;
     if (this.active && this.engine) {
       const wasPlaying = this.engine.playing;
@@ -848,14 +912,14 @@ export class PracticeView {
         this.updateHud();
         this.dirty = false;
       }
+      this.stage.letters = this.letters ? this.kb.base : null;
+      this.timeline.update(this.engine.pos);
       this.stage.draw(now);
     }
-    requestAnimationFrame(this.frame);
   };
 
   private badge(n: ScoreNote): string {
-    const col = n.finger ? FINGER_COLORS[n.finger] : NO_FINGER;
-    return `<span class="finger" style="background:${col}">${n.finger ?? '?'}</span>`;
+    return `<span class="finger" style="--c:${n.finger ? `var(--f${n.finger})` : 'var(--nofinger)'}">${n.finger ?? '?'}</span>`;
   }
 
   private updateHud(): void {
@@ -864,33 +928,41 @@ export class PracticeView {
     if (!e || !score) return;
     const style = this.app.nameStyle();
     const target = e.target;
+    const pending = e.mode === 'listen' || !target ? [] : target.notes.filter((n) => e.noteState(n) !== 1);
     let next: string;
-    if (e.mode === 'listen') next = t('hud.listen');
-    else if (!target) next = t('hud.ended');
+    if (e.mode === 'listen') next = `<span class="tip">${t('hud.listen')}</span>`;
+    else if (!target) next = `<span class="lead">${t('hud.ended')}</span>`;
     else {
-      const pending = target.notes.filter((n) => e.noteState(n) !== 1);
-      const parts = pending.map((n) => `<b>${noteName(n.pitch, style)}</b>${this.badge(n)}`);
-      if (pending.length === 1) {
-        const n = pending[0];
-        const hand = e.hand === 'both' ? ` <span class="hand">${t(n.hand === 'L' ? 'hand.L' : 'hand.R').toLowerCase()}</span>` : '';
-        next = `${t('hud.next')}: ${parts[0]} ${n.finger ? fingerName(n.finger) : ''}${hand}`;
-      } else next = `${t('hud.next')}: ${parts.join(' + ')}`;
-      if (!e.playing && !e.finished && e.mode === 'learn') next += `<span class="tip">${t('hud.pressToStart')}</span>`;
+      const parts = pending.map((n) => {
+        const hand = e.hand === 'both' ? ` <small>${t(n.hand === 'L' ? 'hand.L' : 'hand.R').toLowerCase()}</small>` : '';
+        const fname = pending.length === 1 && n.finger ? ` <small>${fingerName(n.finger)}</small>` : '';
+        return `<span class="nt">${noteName(n.pitch, style)}${this.badge(n)}${fname}${hand}</span>`;
+      });
+      next = `<span class="lead">${t('hud.next')}</span><span class="notes">${parts.join('')}</span>`;
     }
     if (next !== this.lastNext) {
       $('next').innerHTML = next;
       this.lastNext = next;
     }
+    const sc = score.hands;
+    this.hands.update({
+      active: new Set(e.hand === 'both' ? ['L', 'R'] : [e.hand]),
+      trainer: e.accompanying && e.hand !== 'both' ? (e.hand === 'R' ? 'L' : 'R') : null,
+      outlined: e.hand === 'both' && sc.L && sc.R ? 'L' : null,
+      next: pending.map((n) => ({ hand: n.hand, finger: n.finger })),
+    });
     const m = Math.max(1, measureAt(score, e.pos));
     const n = e.lastMeasure();
-    let stats = `${t('hud.measure', { m: `<b>${m}</b>`, n })}<br>${t('hud.stats', { hits: `<b>${e.hits}</b>`, wrong: `<b>${e.wrong}</b>` })}`;
-    if (e.mode === 'tempo') stats += t('hud.statsMissed', { misses: `<b>${e.misses}</b>` });
+    const num = (key: 'hud.hits' | 'hud.wrong' | 'hud.misses', v: number) => t(key, { n: `<b>${v}</b>` });
+    let stats = `<span>${t('hud.bar', { m: `<b>${m}</b>`, n })}</span><span class="${e.hits ? 'ok' : ''}">${num('hud.hits', e.hits)}</span><span class="${e.wrong ? 'bad' : ''}">${num('hud.wrong', e.wrong)}</span>`;
+    if (e.mode === 'tempo') stats += `<span class="${e.misses ? 'bad' : ''}">${num('hud.misses', e.misses)}</span>`;
     const pl = this.stage.placement;
-    if (pl && pl.outside > 0) stats += `<br><span class="warn">⚠ ${t('kb.needs', { keys: keysLabel(pl.needs) })}</span>`;
+    if (pl && pl.outside > 0) stats += `<span class="warn">⚠ ${t('kb.needs', { keys: keysLabel(pl.needs) })}</span>`;
     if (stats !== this.lastStats) {
       $('stats').innerHTML = stats;
       this.lastStats = stats;
     }
+    $('nowTip').hidden = e.playing || e.mode === 'listen';
     this.renderPlay();
   }
 
@@ -906,7 +978,7 @@ export class PracticeView {
   private showHint(text: string, ms: number, ok = false): void {
     const h = $('hint');
     h.textContent = text;
-    h.classList.toggle('ok', ok);
+    h.className = ok ? 'hint ok' : 'hint';
     h.hidden = false;
     this.hintUntil = performance.now() + ms;
   }
@@ -934,13 +1006,29 @@ export class PracticeView {
   private hintFinished(s: Summary): void {
     const e = this.engine!;
     const missed = s.mode === 'tempo' ? t('hint.doneMissed', { misses: s.misses }) : '';
-    const whole = e.rangeMeasures[0] === 1 && e.rangeMeasures[1] === e.lastMeasure();
-    let text = whole
-      ? t('hint.done', { hits: s.hits, wrong: s.wrong, missed })
-      : t('hint.sectionDone', { from: e.rangeMeasures[0], to: e.rangeMeasures[1], hits: s.hits, wrong: s.wrong, missed });
+    const [from, to] = e.rangeMeasures;
     const r = this.lastPass;
-    if (r) text += ` ${percent(r.accuracy)}${r.previousBest === null ? '' : r.accuracy > r.previousBest + 1e-9 ? t('pass.best') : t('pass.bestWas', { best: percent(r.previousBest) })}`;
+    if (r) {
+      this.showResult(r, this.passWhat(from, to), t('result.counts', { hits: s.hits, wrong: s.wrong, missed }), 7000);
+      return;
+    }
+    const whole = from === 1 && to === e.lastMeasure();
+    const text = whole ? t('hint.done', { hits: s.hits, wrong: s.wrong, missed }) : t('hint.sectionDone', { from, to, hits: s.hits, wrong: s.wrong, missed });
     this.showHint(text, 7000, true);
+  }
+
+  /** How a pass went: the share of right notes in large type, and whether it beat the best. */
+  private showResult(r: PassResult, what: string, counts: string, ms: number): void {
+    const best = r.previousBest !== null && r.accuracy > r.previousBest + 1e-9;
+    const vs = r.previousBest === null ? '' : best ? t('result.best') : t('result.bestWas', { best: percent(r.previousBest) });
+    const h = $('hint');
+    h.replaceChildren(
+      el('b', { class: 'score', text: percent(r.accuracy) }),
+      el('span', { class: 'res' }, [el('b', { text: what }), el('small', { text: [counts || t('result.correct'), vs].filter(Boolean).join(' · ') })]),
+    );
+    h.className = `hint ok result${best ? ' best' : ''}`;
+    h.hidden = false;
+    this.hintUntil = performance.now() + ms;
   }
 }
 

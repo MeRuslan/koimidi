@@ -7,7 +7,7 @@ No sign-up, no server: your files are parsed on your device and never leave it.
 
 **Try it:** https://meruslan.github.io/koimidi/ · [По-русски](README.ru.md)
 
-<p align="center"><img src="docs/screenshot.jpg" alt="koimidi practice screen: falling colour-coded bars with finger numbers above an on-screen keyboard" width="800"></p>
+<p align="center"><img src="docs/screenshot.jpg" alt="koimidi practice screen in the Paper look: the strip of bars at the top, falling colour-coded bars with finger numbers above a keyboard behind a red felt strip, and on the left the mode, tempo, hands and a picture of both hands showing the next fingers" width="800"></p>
 
 ## Why
 
@@ -29,14 +29,16 @@ Learning a melody without reading sheet music means you want three things at onc
 - **Count-in and metronome.** *In tempo* starts after one bar of clicks; the metronome clicks every beat in *In tempo* and *Listen*.
 - **Keyboard profile.** Tell koimidi how many keys your controller has, or let it guess from the device name (Komplete Kontrol M32 → 32 keys). Controllers up to 49 keys appear on screen key for key, at the octave that suits the piece; pieces that need more keys are flagged in the library and while you practise.
 - **Record your playing** with the ● button, listen back, and save it as a `.mid` file.
-- **Loop any range of bars**, with section chips when the score has rehearsal marks.
+- **Loop any range of bars** on the strip of bars above the stage: click a bar, drag across several, or click a section's name when the score has rehearsal marks. A thin stripe under each bar shows how many mistakes you made there.
+- **Your hands on screen.** A picture of both hands, every fingertip in its finger's colour, lights up the fingers of the next notes, with their names beside it.
 - **Any octave accepted** on small keyboards, with a hint about which way to press OCTAVE.
 - **Tempo from 20 % to 100 %**, right / left / both hands, note names as *do re mi* or *C D E*.
 - **The trainer plays the other hand.** Practise the right hand while koimidi plays the left (or the other way round) from grey bars; in *Learn* mode the other hand waits with you, so the chord sounds when you play your note.
 - **Progress.** Practice time, accuracy of every pass, a strip of mistakes per bar (click a bar to loop it), your hardest bars, and how the current bar range has gone pass by pass. The library shows time and best result for each piece.
 - **Works offline.** After the first visit the whole app is kept in the browser; install it from the address bar or the **Install** button and it opens like an app, without the internet.
-- **No MIDI keyboard?** Computer keys `A`–`L` (white) and `W E T Y U O` (black) work, so does tapping the on-screen keys.
+- **No MIDI keyboard?** Computer keys `A`–`L` (white) and `W E T Y U O` (black) work, and while no keyboard is connected the on-screen keys show which letter plays them; tapping the on-screen keys works too.
 - **Built-in library** of 16 public-domain pieces, from *Twinkle, Twinkle* to *Für Elise* (part A), the Minuet in G, Brahms' Lullaby and *Korobeiniki*, typeset for koimidi.
+- **Three looks:** *Paper*, a printed score on warm paper with the keys behind a red felt strip; *Lacquer*, the same at night; *Console*, an aluminium panel with a dark screen. By default it follows the system's light or dark mode; choose in Settings.
 - English and Russian interface; settings and your files stay in the browser.
 
 ## Requirements
@@ -50,7 +52,7 @@ The site must be served over `https://` or opened from `localhost` / a local fil
 1. Open the site, plug in the keyboard, allow MIDI access when the browser asks.
 2. Pick a piece from the library or open your own `.mid` / `.musicxml` / `.mxl`.
 3. Press the highlighted key to start. In *Learn* mode nothing moves until you play the right note.
-4. Narrow the loop to a few bars (the **Bars** fields, the section chips, or `[` / `]` while playing), slow the tempo, repeat, widen. In a two-hand piece, practise one hand with **+ other hand** on, then both.
+4. Narrow the loop to a few bars (drag across the strip of bars above the stage, click a section's name, type them in the **Bars** fields, or `[` / `]` while playing), slow the tempo with − and +, repeat, widen. In a two-hand piece, practise one hand with **The trainer plays the other hand** on, then both.
 5. A finger feels wrong? Click its bar and choose another one; the rest of the fingering adapts.
 6. Switch to *In tempo* when it feels easy, with the metronome if it helps. Record a take with ● to hear yourself.
 7. Open **Progress** (the chart button) to see which bars still go wrong, and loop them.
@@ -84,13 +86,14 @@ Plain TypeScript + Vite, no UI framework. Layout of `src/`:
 | --- | --- |
 | `score/` | the score model, MIDI and MusicXML importers, MusicXML export, the compact library notation, automatic fingering and the player's finger edits |
 | `practice/` | the practice engine (modes, waiting, hit windows, loop range, octave tolerance, count-in, metronome, the trainer's hand, pass statistics), progress and the recorder |
-| `render/` | the canvas renderer (falling bars, keyboard) |
+| `render/` | the canvas renderer (falling bars, keyboard), in the colours of the current look |
 | `audio/` | the WebAudio synth and metronome, sampled instruments through SpessaSynth, sound banks (the grand piano and the player's packs) |
 | `input/` | Web MIDI and computer-keyboard input, keyboard profiles |
 | `storage/` | settings in localStorage; files, finger edits and progress in IndexedDB |
 | `video/` | pieces from videos: finding the keyboard in a frame, following the keys, beats, bars and hands, the YouTube player, tab and file capture, listening by ear with Basic Pitch, and synthetic videos for the tests |
 | `library/` | built-in pieces |
-| `ui/` | home, practice and "from a video" screens, the progress panel |
+| `ui/` | home, practice and "from a video" screens, the strip of bars, the hands picture, the progress sheet |
+| `theme.ts`, `styles.css`, `fonts.css` | the three looks as colour tokens, the stylesheet, and the bundled fonts (Piazzolla, JetBrains Mono, Golos Text, Unbounded) |
 | `sw.js`, `pwa.ts` | the service worker (its file list is filled in by the build, see `vite.config.ts`) and its registration, update prompt and Install button |
 
 Deployment is a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs the tests, builds, and publishes `dist/` to GitHub Pages on every push to `main`. The build uses a relative base path, so it works from any folder or domain.

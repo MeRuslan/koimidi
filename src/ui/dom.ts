@@ -27,7 +27,7 @@ export function toast(text: string, opts: { ms?: number; error?: boolean; action
   t.replaceChildren(text);
   const action = opts.action;
   if (action) {
-    const b = el('button', { type: 'button', class: 'primary small', text: action.label });
+    const b = el('button', { type: 'button', class: 'btn sm', text: action.label });
     b.addEventListener('click', () => {
       t.hidden = true;
       action.run();
@@ -60,4 +60,11 @@ export function download(name: string, data: BlobPart, type: string): void {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+/** Fill a range input's track up to its value (the stylesheet draws it from --fill). */
+export function paintRange(input: HTMLInputElement): void {
+  const min = +input.min || 0;
+  const max = +input.max || 100;
+  input.style.setProperty('--fill', `${((+input.value - min) / (max - min)) * 100}%`);
 }

@@ -6,6 +6,7 @@ import type { Instrument } from '../audio/banks';
 import type { KeyboardChoice } from '../input/profile';
 import type { HandSel, Mode } from '../practice/engine';
 import type { MidiSplit } from '../score/midi';
+import type { ThemeChoice } from '../theme';
 
 export type Lang = 'ru' | 'en';
 export type NoteNames = 'auto' | 'solfege' | 'letters';
@@ -33,6 +34,8 @@ export interface Settings {
   instrument: Instrument;
   /** chosen preset per sound bank, as "bankMSB:bankLSB:program" */
   patches: Record<string, string>;
+  /** the look: paper, lacquer, console, or like the system */
+  theme: ThemeChoice;
   lastPieceId?: string;
 }
 
@@ -64,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   accompany: true,
   instrument: 'simple',
   patches: {},
+  theme: 'auto',
 };
 
 function read<T>(key: string): T | null {

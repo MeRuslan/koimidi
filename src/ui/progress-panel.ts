@@ -5,6 +5,7 @@
  */
 import { getLang, t, type Key } from '../i18n';
 import type { Engine } from '../practice/engine';
+import type { BarTally } from '../practice/engine';
 import { accuracy, samePasses, weakestBars, type PassRecord, type PieceProgress } from '../practice/progress';
 import type { Score } from '../score/model';
 import { $, el } from './dom';
@@ -13,6 +14,12 @@ const SVG = 'http://www.w3.org/2000/svg';
 /** Error-rate buckets for the heat strip: upper bound of the share of mistakes in each step. */
 const STEPS = [0, 0.05, 0.15, 0.3, 1];
 const TREND_MAX = 20;
+
+/** Heat step of a bar, 0 (few mistakes) to 4 (many), or -1 when it was not played. */
+export function heatStep(b: BarTally | undefined): number {
+  const acc = b ? accuracy(b) : null;
+  return acc === null ? -1 : STEPS.findIndex((s) => 1 - acc <= s + 1e-9);
+}
 
 export function percent(x: number): string {
   return `${Math.round(x * 100)}%`;
@@ -54,24 +61,34 @@ export class ProgressPanel {
   }
 
   render(p: PieceProgress | null, e: Engine, score: Score): void {
-    const root = this.root;
-    root.replaceChildren(el('div', { class: 'sect', text: t('progress') }));
+    const close = el('button', { type: 'button', class: 'btn icon ghost', title: t('close'), 'aria-label': t('close') });
+    close.innerHTML = '<svg class="i" aria-hidden="true"><use href="#i-close"/></svg>';
+    close.addEventListener('click', () => this.close());
+    const body = el('div', { class: 'sheet-body' });
+    this.root.replaceChildren(el('header', { class: 'sheet-head' }, [el('h2', { text: t('progress') }), close]), body);
+    const group = (title: string) => {
+      const g = el('section', { class: 'group' }, [el('h3', { text: title })]);
+      body.append(g);
+      return g;
+    };
     if (!p || (!p.passes.length && !Object.keys(p.bars).length)) {
-      root.append(el('p', { class: 'prog-empty', text: t('progress.none') }));
+      body.append(el('p', { class: 'prog-empty', text: t('progress.none') }));
       return;
     }
-    root.append(el('p', { class: 'prog-total', text: t('progress.total', { time: practiceTime(p.seconds), n: p.passes.length }) }));
+    const time = practiceTime(p.seconds);
+    const total = el('p', { class: 'prog-total' }, [el('b', { text: time }), t('progress.totalSub', { n: p.passes.length })]);
+    group(t('progress')).append(total);
 
     // mistakes per bar
-    root.append(el('div', { class: 'sect', text: t('progress.bars') }));
+    const bars = group(t('progress.bars'));
     const readout = el('p', { class: 'prog-readout', 'aria-live': 'polite' });
-    const strip = el('div', { class: 'heat', role: 'group', 'aria-label': t('progress.bars') });
+    const strip = el('div', { class: 'heat-grid', role: 'group', 'aria-label': t('progress.bars') });
     const [from, to] = e.rangeMeasures;
     for (const m of score.measures) {
       const b = p.bars[m.number];
       const acc = b ? accuracy(b) : null;
       const n = b ? b.hits + b.wrong + b.misses : 0;
-      const step = acc === null ? -1 : STEPS.findIndex((s) => 1 - acc <= s + 1e-9);
+      const step = heatStep(b);
       const cell = el('button', { type: 'button', class: `cell s${step}`, text: String(m.number) });
       if (m.number >= from && m.number <= to) cell.classList.add('in');
       const label = acc === null ? t('progress.barNone', { m: m.number }) : t('progress.bar', { m: m.number, acc: percent(acc), n });
@@ -90,7 +107,7 @@ export class ProgressPanel {
       el('i', { class: 'cell s-1' }),
       el('span', { text: t('progress.legendNone') }),
     ]);
-    root.append(strip, legend, readout);
+    bars.append(strip, legend, readout);
 
     const hardest = weakestBars(p);
     if (hardest.length) {
@@ -100,30 +117,30 @@ export class ProgressPanel {
         c.addEventListener('click', () => this.loopBar(m));
         chips.append(c);
       }
-      root.append(el('div', { class: 'prog-hard' }, [el('span', { class: 'label', text: t('progress.hardest') }), chips]));
+      bars.append(el('div', { class: 'prog-hard' }, [el('span', { class: 'label', text: t('progress.hardest') }), chips]));
     }
 
     // passes over the current range
     const hand = t(`hand.${e.hand}` as Key).toLowerCase();
-    root.append(el('div', { class: 'sect', text: t('progress.range', { from, to, mode: t(`mode.${e.mode}` as Key).toLowerCase(), hand }) }));
+    const range = group(t('progress.range', { from, to, mode: t(`mode.${e.mode}` as Key).toLowerCase(), hand }));
     const passes = samePasses(p, from, to, e.mode, e.hand);
     if (!passes.length) {
-      root.append(el('p', { class: 'prog-empty', text: t(e.mode === 'listen' ? 'progress.listen' : 'progress.noPasses') }));
+      range.append(el('p', { class: 'prog-empty', text: t(e.mode === 'listen' ? 'progress.listen' : 'progress.noPasses') }));
     } else {
       const recent = passes.slice(-TREND_MAX);
       const offset = passes.length - recent.length;
       const trendReadout = el('p', { class: 'prog-readout', 'aria-live': 'polite' });
-      root.append(el('p', { class: 'fine', text: t('progress.trend') }), this.trend(recent, offset, trendReadout), trendReadout);
+      range.append(el('p', { class: 'fine', text: t('progress.trend') }), this.trend(recent, offset, trendReadout), trendReadout);
       const list = el('ol', { class: 'prog-list', start: String(passes.length), reversed: true });
       for (const r of passes.slice(-5).reverse()) list.append(el('li', { text: t('progress.pass', { date: when(r.at), speed: percent(r.speed), acc: percent(accuracy(r) ?? 0) }) }));
-      root.append(list);
+      range.append(list);
     }
 
     const resetBtn = el('button', { type: 'button', class: 'ghost small', text: t('progress.reset') });
     resetBtn.addEventListener('click', () => {
       if (confirm(t('progress.resetConfirm'))) this.reset();
     });
-    root.append(el('div', { class: 'actions' }, [resetBtn]));
+    body.append(el('section', { class: 'group' }, [el('div', { class: 'row actions' }, [resetBtn])]));
   }
 
   /** Accuracy per pass, 0–100 %, as a 2px line; hovering a pass shows it in the readout below. */

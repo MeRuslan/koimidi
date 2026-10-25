@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.6.0 — 2026-10-25
+
+A new look, and a practice screen that no longer falls apart on smaller windows.
+
+- **Three looks**, in Settings: *Paper* (a printed score on warm paper, the keys in a black case behind a red felt strip, the default on a light system), *Lacquer* (the same at night, the default on a dark system) and *Console* (an aluminium panel with keycap buttons and a dark screen). The canvas, the home picture, the progress colours and the video piano roll all follow the look; the browser's own bar takes its colour too
+- Type: Piazzolla for titles and the count-in, JetBrains Mono for labels and numbers, Golos Text for the rest; bundled for offline use, Latin and Cyrillic only
+- **Practice screen rebuilt.** One rail on the left instead of a toolbar that wrapped into three rows: the piece, the mode with a line on what it does, a large Start / Pause, restart and record, tempo with − and +, the hands (left · both · right in the order they sit on the keys) and *The trainer plays the other hand*; Progress, Settings and the keyboard's status at the bottom. On a phone the rail becomes a header and a row of controls under the keys
+- **Strip of bars** above the stage, every bar as wide as it is long: click a bar or drag across several to practise just those, shift-click to extend, click a section's name to take the section; a bracket marks the practised bars (dashed when the loop is off), a line follows the music, and a stripe under each bar shows its mistakes. Replaces the section chips row
+- **The next notes on a picture of the hands**: every fingertip in its finger's colour (so it is also the legend), the fingers to press filled in, the trainer's hand dashed; below it the note names with finger numbers and names, the bar and the counts
+- The stage: lanes under the black keys and a line at every C, bars land on a felt strip, the keys are drawn as keys (ivory with a shadow under the felt, black keys with a lip, off-centre as on a piano), left-hand bars are outlined instead of dimmed, the finger number sits in a chip at the leading edge, the next key gets a pad in the finger's colour, keys played by the trainer in Listen mode light up in the finger's colour, and the count-in is set large in the display face
+- "Play the highlighted key to start" and "waiting for your key" now appear just above the keys, where you are looking
+- **Without a MIDI keyboard the keys show their computer letters** (A–L, W E T Y U O), following Z / X
+- The result of a pass appears large (94 %, "your best yet!") instead of in a line of text; recording shows its time on the record button, which turns into a stop button
+- Settings and Progress open as sheets from the right edge with a close button, instead of popovers that ran off the screen; Settings has the looks as small pictures and a list of keyboard shortcuts; long instrument names no longer push the sheet wider than the window
+- **Home**: a headline and a small animated picture of Ode to Joy falling onto the keys with its fingering; the keyboard's status as a line with its name and size; *Pick up where you left off* as a large button; the library as the contents page of a songbook, grouped by difficulty, with dotted leaders; your files in the same style with a remove button
+- New icon: a red disc over keys
+- Fixed: a hit ripple that started a moment after the frame could throw while drawing and freeze the stage until the page was reloaded; the drawing loop now carries on after an error
+- Fixed: the lead-in before bar 1 was shaded as if it were outside the loop
+
 ## v0.5.0 — 2026-10-25
 
 Pieces from videos.

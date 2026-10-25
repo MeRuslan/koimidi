@@ -17,7 +17,15 @@ function make(text = 'time: 4/4\ntempo: 120\nR: C4 D4 E4 F4 | G4 A4 B4 C5 | [C4 
   };
   const e = new Engine(score, ev);
   e.speed = 1;
-  return { e, ev, score };
+  // a clock that moves with the steps, as the frames do in the app
+  let clock = 0;
+  e.now = () => clock;
+  const step = e.step.bind(e);
+  e.step = (dt: number) => {
+    clock += dt;
+    step(dt);
+  };
+  return { e, ev, score, wait: (s: number) => (clock += s) };
 }
 
 describe('engine: learn mode', () => {
@@ -125,6 +133,72 @@ describe('engine: tempo mode', () => {
     e.press(62);
     expect(e.hits).toBe(1);
     expect(e.wrong + 0).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('engine: rhythm', () => {
+  const tune = 'time: 4/4\ntempo: 120\nR: C4 D4 E4 F4 | G4 A4 B4 C5 |';
+  const pitches = [60, 62, 64, 65, 67, 69, 71, 72];
+  const tempo = () => {
+    const r = make(tune);
+    r.e.countIn = false;
+    r.e.loop = false;
+    r.e.setMode('tempo');
+    r.e.setPlaying(true);
+    return r;
+  };
+
+  it('tempo mode: notes played on their beat are in rhythm', () => {
+    const { e } = tempo();
+    pitches.forEach((p, i) => {
+      while (e.pos < i) e.step(1 / 60);
+      e.press(p);
+    });
+    expect(e.hits).toBe(8);
+    expect(e.rhythm!.score).toBe(1);
+    expect(e.rhythm!.lean).toBe(0);
+  });
+
+  it('tempo mode: notes a fifth of a beat late lose some, and the pass says they are late', () => {
+    const { e, ev } = tempo();
+    pitches.forEach((p, i) => {
+      while (e.pos < i + 0.2) e.step(1 / 60);
+      e.press(p);
+    });
+    for (let i = 0; i < 120; i++) e.step(1 / 60);
+    const s = (ev.pass as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(s.timed).toBe(8);
+    expect(s.onTime / s.timed).toBeLessThan(0.75);
+    expect(s.onTime / s.timed).toBeGreaterThan(0.4);
+    expect(s.lean).toBe(1);
+  });
+
+  it('tempo mode: a key pressed between frames is timed where it went down', () => {
+    const { e, wait } = tempo();
+    pitches.forEach((p, i) => {
+      while (e.pos < i - 0.15) e.step(1 / 60);
+      wait((i - e.pos) * 0.5); // the last frame showed the bars a little early; the key went down on the beat
+      e.press(p);
+    });
+    expect(e.hits).toBe(8);
+    expect(e.rhythm!.score).toBe(1);
+  });
+
+  it('learn mode: a pause is not a gap between notes', () => {
+    const { e } = make(tune);
+    e.setPlaying(true);
+    for (let i = 0; i < 60; i++) e.step(1 / 60);
+    [60, 62, 64, 65].forEach((p) => {
+      e.press(p);
+      for (let i = 0; i < 30; i++) e.step(1 / 60);
+    });
+    e.setPlaying(false);
+    e.setPlaying(true);
+    e.step(1 / 60);
+    e.press(67); // a moment after the pause: not timed
+    expect(e.rhythm!.timed).toBe(3);
+    expect(e.rhythm!.score).toBe(1);
+    expect(e.rhythm!.pace).toBeCloseTo(1);
   });
 });
 
@@ -295,8 +369,11 @@ describe('engine: pass statistics', () => {
     const [s] = passes(ev);
     expect(s.complete).toBe(true);
     expect([s.hits, s.wrong, s.misses]).toEqual([8, 1, 0]);
-    expect(s.bars[1]).toEqual({ hits: 4, wrong: 1, misses: 0 });
-    expect(s.bars[2]).toEqual({ hits: 4, wrong: 0, misses: 0 });
+    // the rhythm too: quarters played every 0.6 s, but F4 1.2 s after E4 (a wrong key in between)
+    expect(s.bars[1]).toEqual({ hits: 4, wrong: 1, misses: 0, onTime: 2, timed: 3 });
+    expect(s.bars[2]).toEqual({ hits: 4, wrong: 0, misses: 0, onTime: 4, timed: 4 });
+    expect([s.onTime, s.timed]).toEqual([6, 7]);
+    expect(s.pace).toBeCloseTo(0.5 / 0.6);
     expect(s.seconds).toBeGreaterThan(4);
     expect([s.from, s.to, s.mode, s.hand]).toEqual([1, 2, 'learn', 'R']);
   });

@@ -16,9 +16,12 @@
  * starts together with your note sounds when you play it.
  *
  * Every pass through the range is counted per bar (hits, wrong keys, misses)
- * and reported with `pass` when it ends or is interrupted.
+ * and reported with `pass` when it ends or is interrupted, with its rhythm:
+ * how close the right notes came to their time in tempo mode, or to the gaps
+ * between them at your own tempo in learn mode (see rhythm.ts).
  */
-import { bpmAt, groupByOnset, type Hand, type NoteGroup, type Score, type ScoreNote } from '../score/model';
+import { beatsToSeconds, bpmAt, groupByOnset, type Hand, type NoteGroup, type Score, type ScoreNote } from '../score/model';
+import { RhythmTally, type RhythmSummary } from './rhythm';
 
 export type Mode = 'learn' | 'tempo' | 'listen';
 export type HandSel = 'R' | 'L' | 'both';
@@ -46,7 +49,12 @@ export interface BarTally {
   hits: number;
   wrong: number;
   misses: number;
+  /** rhythm: summed scores (0–1) of the notes judged, and how many there were */
+  onTime?: number;
+  timed?: number;
 }
+
+type Count = 'hits' | 'wrong' | 'misses';
 
 /** One pass through the loop range, or the part of it played before stopping. */
 export interface PassStats extends BarTally {
@@ -61,6 +69,10 @@ export interface PassStats extends BarTally {
   complete: boolean;
   /** per bar number */
   bars: Record<number, BarTally>;
+  /** tempo mode: played early (-1) or late (1) on the whole */
+  lean?: -1 | 1;
+  /** learn mode: your own tempo as a share of the piece's */
+  pace?: number;
 }
 
 interface Click {
@@ -97,6 +109,8 @@ export class Engine {
   metronome = false;
   /** play the other hand when one hand of a two-hand piece is practised */
   accompany = true;
+  /** a steady clock in seconds, for when keys go down (frames come late or not at all; tests drive their own) */
+  now: () => number = () => performance.now() / 1000;
 
   pos = 0;
   playing = false;
@@ -124,6 +138,13 @@ export class Engine {
   readonly keyNote = new Map<number, ScoreNote>();
   private cur: PassStats | null = null;
   private idle = 0;
+  /** timing of the pass under way, and of everything played since the mode was chosen (the HUD) */
+  private timing = new RhythmTally();
+  private timingAll = new RhythmTally();
+  /** when the position was last moved */
+  private stepAt = 0;
+  /** learn mode: the last note group played, when and at which beat */
+  private lastOnset: { i: number; at: number; t: number } | null = null;
 
   constructor(score: Score, private ev: EngineEvents) {
     this.score = score;
@@ -161,6 +182,7 @@ export class Engine {
     this.endPass(false);
     this.mode = m;
     this.hits = this.wrong = this.misses = 0;
+    this.timingAll = new RhythmTally();
     this.restart();
   }
 
@@ -252,6 +274,8 @@ export class Engine {
     const [from, to] = this.rangeMeasures;
     this.cur = { from, to, mode: this.mode, hand: this.hand, speed: this.speed, hits: 0, wrong: 0, misses: 0, seconds: 0, complete: false, bars: {} };
     this.idle = 0;
+    this.timing = new RhythmTally();
+    this.lastOnset = null;
   }
 
   /** Report the pass so far (listen mode and passes without a single note are not practice). */
@@ -261,6 +285,7 @@ export class Engine {
     if (!p || p.mode === 'listen' || p.hits + p.wrong + p.misses === 0) return;
     p.complete = complete;
     p.speed = this.speed;
+    this.addRhythm(p);
     this.ev.pass(p);
   }
 
@@ -268,10 +293,28 @@ export class Engine {
   get currentPass(): PassStats | null {
     const p = this.cur;
     if (!p || p.mode === 'listen' || p.hits + p.wrong + p.misses === 0) return null;
-    return { ...structuredClone(p), speed: this.speed };
+    const c = { ...structuredClone(p), speed: this.speed };
+    this.addRhythm(c);
+    return c;
   }
 
-  private tally(measure: number, kind: keyof BarTally): void {
+  /** Rhythm of everything played since the mode was chosen, for the HUD (null until a few notes are timed). */
+  get rhythm(): RhythmSummary | null {
+    return this.timingAll.summary;
+  }
+
+  /** Put the pass's rhythm into its counts, per bar and in all. */
+  private addRhythm(p: PassStats): void {
+    const r = this.timing.summary;
+    if (!r) return;
+    p.onTime = r.onTime;
+    p.timed = r.timed;
+    for (const [k, b] of Object.entries(r.bars)) Object.assign((p.bars[+k] ??= { hits: 0, wrong: 0, misses: 0 }), b);
+    if (r.lean) p.lean = r.lean;
+    if (r.pace !== null) p.pace = r.pace;
+  }
+
+  private tally(measure: number, kind: Count): void {
     const p = this.cur;
     if (!p) return;
     p[kind]++;
@@ -393,6 +436,7 @@ export class Engine {
   /** The score's notes were edited: group them again and stay where the bars are. */
   reload(): void {
     this.groups = groupByOnset(this.activeNotes);
+    this.lastOnset = null;
     this.buildAccompaniment();
     this.state.clear();
     this.resync();
@@ -412,7 +456,10 @@ export class Engine {
   setPlaying(on: boolean): void {
     if (on && this.finished) this.restart();
     this.playing = on;
-    if (!on) this.clearAuto();
+    if (!on) {
+      this.clearAuto();
+      this.lastOnset = null; // a pause is not a gap between notes
+    }
     this.ev.change();
   }
 
@@ -463,6 +510,7 @@ export class Engine {
       const pending = this.pendingTarget;
       const hit = pending.find((n) => n.pitch === pitch) ?? pending.find(matchNote);
       if (hit) {
+        if (pending.length === target.notes.length) this.onset(target, hit);
         this.accept(hit, pitch);
         if (this.pendingTarget.length === 0) {
           this.waiting = false;
@@ -472,16 +520,21 @@ export class Engine {
         }
       } else this.reject(pitch, pending);
     } else {
-      // in tempo: look for a pending note within the hit window around now
+      // in tempo: look for a pending note within the hit window around now, which is a little past
+      // the last step (no further than a step goes)
+      const late = Math.min(0.1, Math.max(0, this.now() - this.stepAt));
+      const now = this.pos + (late * bpmAt(this.score, Math.max(0, this.pos)) * this.speed) / 60;
       const candidates: ScoreNote[] = [];
       for (let i = this.next; i < this.groups.length; i++) {
         const g = this.groups[i];
-        if (g.t - this.pos > HIT_WIN) break;
+        if (g.t - now > HIT_WIN) break;
         if (g.t >= this.range[1] - 1e-6) break;
-        for (const n of g.notes) if (this.state.get(n) === 0 && Math.abs(n.t - this.pos) <= HIT_WIN) candidates.push(n);
+        for (const n of g.notes) if (this.state.get(n) === 0 && Math.abs(n.t - now) <= HIT_WIN) candidates.push(n);
       }
       const hit = candidates.find((n) => n.pitch === pitch) ?? candidates.find(matchNote);
       if (hit) {
+        const beat = 60 / (bpmAt(this.score, hit.t) * this.speed);
+        for (const r of [this.timing, this.timingAll]) r.hit(hit.measure, (now - hit.t) * beat, beat);
         this.accept(hit, pitch);
         this.advancePastResolved();
       } else if (candidates.length) this.reject(pitch, candidates);
@@ -503,6 +556,17 @@ export class Engine {
     if (n.pitch !== pitch) this.ev.octaveHint(pitch, n.pitch);
   }
 
+  /** Learn mode: the first note of the target group was played; time the gap from the group before. */
+  private onset(g: NoteGroup, n: ScoreNote): void {
+    const at = this.now();
+    const prev = this.lastOnset;
+    if (prev && prev.i === this.next - 1 && at - prev.at <= IDLE_MAX) {
+      const due = beatsToSeconds(this.score, g.t) - beatsToSeconds(this.score, prev.t);
+      for (const r of [this.timing, this.timingAll]) r.gap(n.measure, due, at - prev.at);
+    }
+    this.lastOnset = { i: this.next, at, t: g.t };
+  }
+
   private reject(pitch: number, wanted: ScoreNote[]): void {
     this.wrong++;
     this.tally(wanted[0].measure, 'wrong');
@@ -519,6 +583,7 @@ export class Engine {
   /* ---------- time ---------- */
 
   step(dt: number): void {
+    this.stepAt = this.now();
     if (!this.playing) return;
     if (this.cur) {
       this.idle = this.waiting ? this.idle + dt : 0;

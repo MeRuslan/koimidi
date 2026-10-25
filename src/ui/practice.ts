@@ -1244,6 +1244,8 @@ export class PracticeView {
     const num = (key: 'hud.hits' | 'hud.wrong' | 'hud.misses', v: number) => t(key, { n: `<b>${v}</b>` });
     let stats = `<span>${t('hud.bar', { m: `<b>${m}</b>`, n })}</span><span class="${e.hits ? 'ok' : ''}">${num('hud.hits', e.hits)}</span><span class="${e.wrong ? 'bad' : ''}">${num('hud.wrong', e.wrong)}</span>`;
     if (e.mode === 'tempo') stats += `<span class="${e.misses ? 'bad' : ''}">${num('hud.misses', e.misses)}</span>`;
+    const rhythm = e.mode === 'listen' ? null : e.rhythm;
+    if (rhythm) stats += `<span>${t('hud.rhythm', { n: `<b>${percent(rhythm.score)}</b>` })}</span>`;
     const pl = this.stage.placement;
     if (pl && pl.outside > 0) stats += `<span class="warn">⚠ ${t('kb.needs', { keys: keysLabel(pl.needs) })}</span>`;
     if (stats !== this.lastStats) {
@@ -1305,15 +1307,29 @@ export class PracticeView {
     this.showHint(text, 7000, true);
   }
 
-  /** How a pass went: the share of right notes in large type, and whether it beat the best. */
+  /**
+   * How a pass went: the share of right notes in large type and whether it
+   * beat the best, and the rhythm next to it once enough notes were timed,
+   * with what to mind (rushing, dragging) or, in learn mode, your own tempo.
+   */
   private showResult(r: PassResult, what: string, counts: string, ms: number): void {
     const best = r.previousBest !== null && r.accuracy > r.previousBest + 1e-9;
     const vs = r.previousBest === null ? '' : best ? t('result.best') : t('result.bestWas', { best: percent(r.previousBest) });
     const h = $('hint');
-    h.replaceChildren(
-      el('b', { class: 'score', text: percent(r.accuracy) }),
-      el('span', { class: 'res' }, [el('b', { text: what }), el('small', { text: [counts || t('result.correct'), vs].filter(Boolean).join(' · ') })]),
-    );
+    if (r.rhythm === null) {
+      h.replaceChildren(
+        el('b', { class: 'score', text: percent(r.accuracy) }),
+        el('span', { class: 'res' }, [el('b', { text: what }), el('small', { text: [counts || t('result.correct'), vs].filter(Boolean).join(' · ') })]),
+      );
+    } else {
+      const figure = (x: number, label: string, cls = '') => el('span', { class: `fig ${cls}` }, [el('b', { class: 'score', text: percent(x) }), el('small', { text: label })]);
+      const tip = r.lean > 0 ? t('result.late') : r.lean < 0 ? t('result.early') : r.pace !== null ? t('result.pace', { speed: percent(r.pace) }) : '';
+      h.replaceChildren(
+        figure(r.accuracy, t('result.notes'), 'notes'),
+        figure(r.rhythm, t('result.rhythm')),
+        el('span', { class: 'res' }, [el('b', { text: what }), el('small', { text: [counts, tip, vs].filter(Boolean).join(' · ') })]),
+      );
+    }
     h.className = `hint ok result${best ? ' best' : ''}`;
     h.hidden = false;
     this.hintUntil = performance.now() + ms;

@@ -35,7 +35,8 @@ Learning a melody without reading sheet music means you want three things at onc
 - **Any octave accepted** on small keyboards, with a hint about which way to press OCTAVE.
 - **Tempo from 20 % to 100 %**, right / left / both hands, note names as *do re mi* or *C D E*.
 - **The trainer plays the other hand.** Practise the right hand while koimidi plays the left (or the other way round) from grey bars; in *Learn* mode the other hand waits with you, so the chord sounds when you play your note.
-- **Progress.** Practice time, accuracy of every pass, a strip of mistakes per bar (click a bar to loop it), your hardest bars, and how the current bar range has gone pass by pass. The library shows time and best result for each piece.
+- **Progress.** Practice time, accuracy and rhythm of every pass, a strip of mistakes per bar (click a bar to loop it), your hardest bars, and how the current bar range has gone pass by pass. The library shows time and best result for each piece.
+- **Rhythm.** Next to the right notes, every pass gets a rhythm score. In tempo it is how close each note came to its beat, with a word when you rush or drag; in Learn mode, where the bars wait for you, it is how evenly you keep your own tempo (a quarter note twice as long as an eighth, whatever the speed), and the app tells you what that tempo was, to pick the speed for In tempo.
 - **Works offline.** After the first visit the whole app is kept in the browser; install it from the address bar or the **Install** button and it opens like an app, without the internet.
 - **No MIDI keyboard?** Computer keys `A`–`L` (white) and `W E T Y U O` (black) work, and while no keyboard is connected the on-screen keys show which letter plays them; tapping the on-screen keys works too.
 - **Built-in library** of 16 public-domain pieces, from *Twinkle, Twinkle* to *Für Elise* (part A), the Minuet in G, Brahms' Lullaby and *Korobeiniki*, typeset for koimidi.
@@ -81,7 +82,7 @@ There is no account, no analytics and no network requests after the page loads, 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # vitest: parsers, MusicXML export, fingering, practice engine, progress, recorder, library, video recognition, the video in step with the bars
+npm test           # vitest: parsers, MusicXML export, fingering, practice engine, rhythm, progress, recorder, library, video recognition, the video in step with the bars
 npm run build      # type-check + production build into dist/
 node scripts/bench-video.mjs video.mp4 --piece ode-to-joy   # the video recognition against a library piece (needs ffmpeg)
 node scripts/bench-video.mjs --audio video.mp4 --piece ode-to-joy   # the same for the fallback by ear
@@ -92,7 +93,7 @@ Plain TypeScript + Vite, no UI framework. Layout of `src/`:
 | Folder | What lives there |
 | --- | --- |
 | `score/` | the score model, MIDI and MusicXML importers, MusicXML export, the compact library notation, automatic fingering and the player's edits of fingers and notes |
-| `practice/` | the practice engine (modes, waiting, hit windows, loop range, octave tolerance, count-in, metronome, the trainer's hand, pass statistics), progress, the recorder, and the video kept in step with the bars |
+| `practice/` | the practice engine (modes, waiting, hit windows, loop range, octave tolerance, count-in, metronome, the trainer's hand, pass statistics), the rhythm of a pass, progress, the recorder, and the video kept in step with the bars |
 | `render/` | the canvas renderer (falling bars, keyboard), in the colours of the current look |
 | `audio/` | the WebAudio synth and metronome, sampled instruments through SpessaSynth, sound banks (the grand piano and the player's packs) |
 | `input/` | Web MIDI and computer-keyboard input, keyboard profiles |

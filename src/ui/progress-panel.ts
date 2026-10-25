@@ -1,12 +1,13 @@
 /**
  * Progress popover: practice time, mistakes per bar as a heat strip (click a
  * bar to loop it), the hardest bars, and the passes over the current bar range
- * as a small trend line with the latest ones listed below.
+ * as a small trend (right notes, and the rhythm once passes have it) with the
+ * latest ones listed below.
  */
 import { getLang, t, type Key } from '../i18n';
 import type { Engine } from '../practice/engine';
 import type { BarTally } from '../practice/engine';
-import { accuracy, samePasses, weakestBars, type PassRecord, type PieceProgress } from '../practice/progress';
+import { accuracy, rhythm, samePasses, weakestBars, type PassRecord, type PieceProgress } from '../practice/progress';
 import type { Score } from '../score/model';
 import { $, el } from './dom';
 
@@ -35,6 +36,15 @@ export function practiceTime(seconds: number): string {
 
 function when(at: number): string {
   return new Intl.DateTimeFormat(getLang(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(at);
+}
+
+/** A pass in the list: the tempo (in learn mode your own, once timed), right notes, the rhythm. */
+function passLine(r: PassRecord): string {
+  const at = { date: when(r.at), speed: percent(r.speed), acc: percent(accuracy(r) ?? 0) };
+  const beat = rhythm(r);
+  if (beat === null) return t('progress.pass', at);
+  if (r.pace !== undefined) return t('progress.passPace', { ...at, pace: percent(r.pace), rhythm: percent(beat) });
+  return t('progress.passRhythm', { ...at, rhythm: percent(beat) });
 }
 
 export class ProgressPanel {
@@ -87,11 +97,17 @@ export class ProgressPanel {
     for (const m of score.measures) {
       const b = p.bars[m.number];
       const acc = b ? accuracy(b) : null;
+      const beat = b ? rhythm(b) : null;
       const n = b ? b.hits + b.wrong + b.misses : 0;
       const step = heatStep(b);
       const cell = el('button', { type: 'button', class: `cell s${step}`, text: String(m.number) });
       if (m.number >= from && m.number <= to) cell.classList.add('in');
-      const label = acc === null ? t('progress.barNone', { m: m.number }) : t('progress.bar', { m: m.number, acc: percent(acc), n });
+      const label =
+        acc === null
+          ? t('progress.barNone', { m: m.number })
+          : beat === null
+            ? t('progress.bar', { m: m.number, acc: percent(acc), n })
+            : t('progress.barRhythm', { m: m.number, acc: percent(acc), rhythm: percent(beat), n });
       cell.setAttribute('aria-label', label);
       const say = () => (readout.textContent = label);
       cell.addEventListener('pointerenter', say);
@@ -130,9 +146,18 @@ export class ProgressPanel {
       const recent = passes.slice(-TREND_MAX);
       const offset = passes.length - recent.length;
       const trendReadout = el('p', { class: 'prog-readout', 'aria-live': 'polite' });
-      range.append(el('p', { class: 'fine', text: t('progress.trend') }), this.trend(recent, offset, trendReadout), trendReadout);
+      const timed = recent.some((r) => rhythm(r) !== null);
+      range.append(el('p', { class: 'fine', text: t(timed ? 'progress.trendRhythm' : 'progress.trend') }));
+      if (timed)
+        range.append(
+          el('div', { class: 'trend-legend', 'aria-hidden': 'true' }, [
+            el('span', {}, [el('i', { class: 'sw notes' }), t('progress.trendNotes')]),
+            el('span', {}, [el('i', { class: 'sw beat' }), t('progress.trendBeat')]),
+          ]),
+        );
+      range.append(this.trend(recent, offset, trendReadout), trendReadout);
       const list = el('ol', { class: 'prog-list', start: String(passes.length), reversed: true });
-      for (const r of passes.slice(-5).reverse()) list.append(el('li', { text: t('progress.pass', { date: when(r.at), speed: percent(r.speed), acc: percent(accuracy(r) ?? 0) }) }));
+      for (const r of passes.slice(-5).reverse()) list.append(el('li', { text: passLine(r) }));
       range.append(list);
     }
 
@@ -143,11 +168,16 @@ export class ProgressPanel {
     body.append(el('section', { class: 'group' }, [el('div', { class: 'row actions' }, [resetBtn])]));
   }
 
-  /** Accuracy per pass, 0–100 %, as a 2px line; hovering a pass shows it in the readout below. */
+  /**
+   * Accuracy per pass, 0–100 %, as a 2px line, and the rhythm as a dashed one
+   * where passes have it, each with its last value at its end; hovering a pass
+   * shows it in the readout below.
+   */
   private trend(recent: PassRecord[], offset: number, readout: HTMLElement): SVGSVGElement {
     const W = 300;
     const H = 64;
-    const pad = { l: 38, r: 8, t: 6, b: 6 };
+    const timed = recent.some((r) => rhythm(r) !== null);
+    const pad = { l: 38, r: timed ? 36 : 8, t: 6, b: 6 };
     const x = (i: number) => (recent.length === 1 ? (pad.l + W - pad.r) / 2 : pad.l + (i * (W - pad.l - pad.r)) / (recent.length - 1));
     const y = (a: number) => pad.t + (1 - a) * (H - pad.t - pad.b);
     const svg = document.createElementNS(SVG, 'svg');
@@ -167,10 +197,40 @@ export class ProgressPanel {
     }
     const pts = recent.map((r, i) => [x(i), y(accuracy(r) ?? 0)] as const);
     if (pts.length > 1) add('polyline', { points: pts.map((p) => p.join(',')).join(' '), class: 'line' });
+    // the rhythm: runs of passes that have it (older passes do not)
+    const beats = recent.map((r, i) => {
+      const v = rhythm(r);
+      return v === null ? null : ([x(i), y(v)] as const);
+    });
+    let run: (readonly [number, number])[] = [];
+    for (const p of [...beats, null]) {
+      if (p) run.push(p);
+      else {
+        if (run.length > 1) add('polyline', { points: run.map((q) => q.join(',')).join(' '), class: 'line beat' });
+        else if (run.length === 1) add('circle', { cx: run[0][0], cy: run[0][1], r: 2, class: 'dot beat' });
+        run = [];
+      }
+    }
     const last = pts[pts.length - 1];
-    add('circle', { cx: last[0], cy: last[1], r: 3, class: 'end' });
-    const marker = add('circle', { cx: 0, cy: 0, r: 4.5, class: 'marker' });
+    const lastBeat = beats[beats.length - 1];
+    if (lastBeat) add('circle', { cx: lastBeat[0], cy: lastBeat[1], r: 3, class: 'end beat' });
+    add('circle', { cx: last[0], cy: last[1], r: 3, class: timed ? 'end notes' : 'end' });
+    if (timed) {
+      // the last values at the line ends, kept apart when they are close
+      const labels = [{ y: last[1], v: accuracy(recent[recent.length - 1]) ?? 0 }];
+      if (lastBeat) labels.push({ y: lastBeat[1], v: rhythm(recent[recent.length - 1])! });
+      if (labels.length === 2 && Math.abs(labels[0].y - labels[1].y) < 11) {
+        const [hi, lo] = labels[0].y <= labels[1].y ? labels : [labels[1], labels[0]];
+        const mid = (hi.y + lo.y) / 2;
+        hi.y = Math.max(pad.t + 4, mid - 5.5);
+        lo.y = hi.y + 11;
+      }
+      for (const l of labels) add('text', { x: W - pad.r + 7, y: l.y + 3.5, class: 'tick value' }).textContent = percent(l.v);
+    }
+    const marker = add('circle', { cx: 0, cy: 0, r: 4.5, class: timed ? 'marker notes' : 'marker' });
     marker.setAttribute('visibility', 'hidden');
+    const markerBeat = add('circle', { cx: 0, cy: 0, r: 4.5, class: 'marker beat' });
+    markerBeat.setAttribute('visibility', 'hidden');
     // hit targets: full-height columns, wider than the marks
     const colW = recent.length > 1 ? (W - pad.l - pad.r) / (recent.length - 1) : W - pad.l - pad.r;
     recent.forEach((r, i) => {
@@ -179,11 +239,20 @@ export class ProgressPanel {
         marker.setAttribute('cx', String(pts[i][0]));
         marker.setAttribute('cy', String(pts[i][1]));
         marker.setAttribute('visibility', 'visible');
-        readout.textContent = t('progress.point', { n: offset + i + 1, date: when(r.at), acc: percent(accuracy(r) ?? 0), speed: percent(r.speed) });
+        const b = beats[i];
+        if (b) {
+          markerBeat.setAttribute('cx', String(b[0]));
+          markerBeat.setAttribute('cy', String(b[1]));
+        }
+        markerBeat.setAttribute('visibility', b ? 'visible' : 'hidden');
+        const v = rhythm(r);
+        const at = { n: offset + i + 1, date: when(r.at), acc: percent(accuracy(r) ?? 0), speed: percent(r.speed) };
+        readout.textContent = v === null ? t('progress.point', at) : t('progress.pointRhythm', { ...at, rhythm: percent(v) });
       });
     });
     svg.addEventListener('pointerleave', () => {
       marker.setAttribute('visibility', 'hidden');
+      markerBeat.setAttribute('visibility', 'hidden');
       readout.textContent = '';
     });
     return svg;

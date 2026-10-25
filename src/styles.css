@@ -645,6 +645,11 @@ canvas#stage { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .hint.result::before { display: none; }
 .hint .score { font: var(--display-weight) 40px/1 var(--display); letter-spacing: -.02em; font-variant-numeric: lining-nums tabular-nums; }
 .hint.best .score { color: var(--accent); }
+.hint .fig { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.hint .fig small { font: 500 11px var(--mono); letter-spacing: .04em; opacity: .72; }
+.hint .fig + .fig { margin-left: -4px; }
+.hint .fig + .res { padding-left: 2px; }
+.hint.best .fig:not(.notes) .score { color: inherit; }
 .hint .res { display: flex; flex-direction: column; gap: 2px; }
 .hint .res small { font-size: 13px; opacity: .72; }
 @keyframes drop-in { from { opacity: 0; transform: translate(-50%, -6px); } }
@@ -768,6 +773,14 @@ button.cell:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .trend .line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .trend .end { fill: var(--accent); }
 .trend .marker { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.trend .line.beat { stroke: var(--accent); stroke-dasharray: 5 3; stroke-linecap: butt; }
+.trend .dot.beat, .trend .end.beat { fill: var(--accent); }
+.trend .end.notes, .trend .marker.notes { fill: var(--ink); }
+.trend .tick.value { fill: var(--ink-2); }
+.trend-legend { display: flex; gap: 14px; margin-top: 6px; font: 500 11px var(--mono); color: var(--ink-2); }
+.trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.trend-legend .sw { width: 16px; height: 0; border-top: 2px solid var(--ink); }
+.trend-legend .sw.beat { border-top: 2px dashed var(--accent); }
 .trend .hit { fill: transparent; }
 .prog-list { margin: 10px 0 0; padding-left: 28px; font: 500 12px/1.7 var(--mono); color: var(--ink-2); }
 

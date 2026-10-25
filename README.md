@@ -79,6 +79,7 @@ npm run dev        # http://localhost:5173
 npm test           # vitest: parsers, MusicXML export, fingering, practice engine, progress, recorder, library, video recognition
 npm run build      # type-check + production build into dist/
 node scripts/bench-video.mjs video.mp4 --piece ode-to-joy   # the video recognition against a library piece (needs ffmpeg)
+node scripts/bench-video.mjs --audio video.mp4 --piece ode-to-joy   # the same for the fallback by ear
 ```
 
 Plain TypeScript + Vite, no UI framework. Layout of `src/`:

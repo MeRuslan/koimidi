@@ -76,6 +76,7 @@ npm run dev        # http://localhost:5173
 npm test           # vitest: парсеры, экспорт MusicXML, аппликатура, движок практики, прогресс, запись, библиотека, распознавание видео
 npm run build      # проверка типов + сборка в dist/
 node scripts/bench-video.mjs video.mp4 --piece ode-to-joy   # распознавание видео против пьесы из библиотеки (нужен ffmpeg)
+node scripts/bench-video.mjs --audio video.mp4 --piece ode-to-joy   # то же для распознавания по звуку
 ```
 
 Чистый TypeScript + Vite без UI-фреймворка. Структура `src/` описана в [README.md](README.md#development), там же — формат записи пьес для библиотеки. В библиотеку принимаются только произведения из общественного достояния в собственном наборе.

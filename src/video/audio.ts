@@ -5,6 +5,7 @@
  * played them, and it makes mistakes, so its result is a draft. The network
  * and TensorFlow.js load only when this is used.
  */
+import type { BasicPitch } from '@spotify/basic-pitch';
 import type { RawNote } from './tracker';
 
 /** Basic Pitch listens at 22.05 kHz, mono. */
@@ -30,8 +31,13 @@ export async function decodeAudio(data: ArrayBuffer): Promise<Float32Array> {
 
 /** Notes heard in the samples. `progress` gets 0–1. */
 export async function listen(samples: Float32Array, progress: (p: number) => void): Promise<RawNote[]> {
-  const { BasicPitch, outputToNotesPoly, noteFramesToTime } = await import('@spotify/basic-pitch');
-  const bp = new BasicPitch(new URL(MODEL, document.baseURI).href);
+  const { BasicPitch } = await import('@spotify/basic-pitch');
+  return listenWith(new BasicPitch(new URL(MODEL, document.baseURI).href), samples, progress);
+}
+
+/** The notes a Basic Pitch hears (the benchmark brings one with the network read from disk). */
+export async function listenWith(bp: BasicPitch, samples: Float32Array, progress: (p: number) => void): Promise<RawNote[]> {
+  const { outputToNotesPoly, noteFramesToTime } = await import('@spotify/basic-pitch');
   const frames: number[][] = [];
   const onsets: number[][] = [];
   await bp.evaluateModel(

@@ -11,17 +11,24 @@
  * rhythm (intervals between neighbouring found notes), and the bars (the bar
  * count moving together). Arrangements differ from the library, so the
  * numbers are a proxy; the alignment is written out to be looked at.
+ *
+ * With --audio the fallback by ear is measured instead: Basic Pitch on the
+ * video's sound, the hands as the importer splits a one-track MIDI (below
+ * middle C to the left when the notes span both registers).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { libraryScore } from '../../src/library';
 import { measureAt, type Hand } from '../../src/score/model';
+import type { BasicPitch } from '@spotify/basic-pitch';
+import { listenWith } from '../../src/video/audio';
 import { KeyboardFinder } from '../../src/video/finder';
 import type { Frame } from '../../src/video/frame';
 import { detectKeyboards, type KeyboardLayout } from '../../src/video/keyboard';
 import { KeyTracker, playable, type RawNote } from '../../src/video/tracker';
-import { octaveHint, transcribe, type Transcribed } from '../../src/video/transcribe';
+import { octaveHint, transcribe, type Transcribed, type TranscribedNote } from '../../src/video/transcribe';
+import { basicPitchFromDisk, samplesOf } from './basic-pitch-node';
 
 /** The app's grabber scales frames to at most this wide. */
 const MAX_W = 960;
@@ -269,7 +276,7 @@ export interface Metrics {
   found: number;
   extra: number;
   wrong: number;
-  /** Found notes whose hand is the right hand; null when the hands were not told apart. */
+  /** Melody notes found among all the notes (either hand) that went to the right hand; null when the hands were not told apart. */
   hands: number | null;
   /** Neighbouring found notes the same distance apart as in the library, at whatever note value the beat was written. */
   rhythm: number;
@@ -312,11 +319,22 @@ export function scoreAgainst(tr: Transcribed, piece: string): { metrics: Metrics
   const libCross = steps.filter((s) => s.libCross).length;
   const recCross = steps.filter((s) => s.recCross).length;
   const barsF = both ? (2 * both) / (libCross + recCross) : 0;
+  // hands: the melody fitted into the top line of all the notes, whichever hand they went to (the fit
+  // above sees the right hand only), and the share of the notes found there that went to the right hand
+  let hands: number | null = null;
+  if (tr.hands === 'color') {
+    const all = skyline(tr.notes, (t) => Math.floor(t / meter + 1e-6));
+    const fa = bestFit(
+      lib.map((n) => n.pitch),
+      all.map((n) => n.pitch),
+    );
+    hands = fa.pairs.length ? fa.pairs.filter(([, j]) => all[j].hand === 'R').length / fa.pairs.length : null;
+  }
   const metrics: Metrics = {
     found: f.pairs.length / lib.length,
     extra: f.extra / lib.length,
     wrong: f.subs / lib.length,
-    hands: tr.hands === 'color' && f.pairs.length ? f.pairs.filter(([, j]) => rec[j].hand === 'R').length / f.pairs.length : null,
+    hands,
     rhythm: steps.length ? rhythmOk / steps.length : 0,
     bars: barsF,
     transposition: f.k,
@@ -356,6 +374,10 @@ export interface Entry {
 
 export interface Result {
   id: string;
+  /** What was recognised: the picture (default) or the sound. */
+  source?: 'video' | 'audio';
+  /** By ear: seconds of sound and notes heard before transcription. */
+  audio?: { seconds: number; heard: number };
   piece: string;
   title?: string;
   channel?: string;
@@ -453,12 +475,66 @@ export async function benchOne(e: Entry, out?: string, peek?: number): Promise<R
   return res;
 }
 
+/** Hands as the importer gives a one-track MIDI (src/score/midi.ts, split 'auto'): below middle C to the left when the notes clearly span both registers. */
+function importerHands(notes: TranscribedNote[]): Hand[] {
+  const pitches = notes.map((n) => n.pitch);
+  const lo = Math.min(...pitches);
+  const hi = Math.max(...pitches);
+  const below = pitches.filter((p) => p < 60).length / Math.max(1, pitches.length);
+  const split = hi - lo >= 24 && below >= 0.25 && below <= 0.75;
+  return pitches.map((p) => (split && p < 60 ? 'L' : 'R'));
+}
+
+/** The fallback by ear on the video's sound, scored like the picture. */
+export async function benchAudio(e: Entry, out: string | undefined, bp: BasicPitch): Promise<Result> {
+  const t0 = performance.now();
+  const v = probeVideo(e.file);
+  const res: Result = {
+    id: e.id,
+    source: 'audio',
+    piece: e.piece,
+    title: e.title,
+    channel: e.channel,
+    note: e.note,
+    video: { width: v.width, height: v.height, fps: Math.round(v.fps * 100) / 100, duration: Math.round(v.duration) },
+    keyboard: null,
+    tracker: null,
+    transcribed: null,
+    metrics: null,
+    alignment: '',
+    seconds: 0,
+  };
+  const samples = samplesOf(e.file);
+  const raw = await listenWith(bp, samples, () => {});
+  res.audio = { seconds: Math.round(samples.length / 22050), heard: raw.length };
+  if (out) writeFileSync(join(out, `${e.id}.raw.json`), JSON.stringify(raw));
+  const heard = transcribe(raw);
+  const hands = importerHands(heard.notes);
+  // scored as the app shows it after import: the right hand is the part above middle C (or everything)
+  const tr: Transcribed = { ...heard, hands: 'color', notes: heard.notes.map((n, i) => ({ ...n, hand: hands[i] })) };
+  res.transcribed = { notes: tr.notes.length, bpm: tr.bpm, timeSig: tr.timeSig.join('/'), hands: hands.includes('L') ? 'by pitch, split at C4' : 'by pitch, one hand', measures: tr.measures, octave: 0 };
+  if (out) writeFileSync(join(out, `${e.id}.notes.json`), JSON.stringify(tr));
+  const { metrics, alignment, timing } = scoreAgainst(tr, e.piece);
+  res.metrics = metrics;
+  res.alignment = alignment;
+  if (out) writeFileSync(join(out, `${e.id}.timing.txt`), `${alignment}\n\n${timing}\n`);
+  res.seconds = Math.round((performance.now() - t0) / 100) / 10;
+  return res;
+}
+
 /* ---------- reporting ---------- */
 
 const pct = (x: number | null | undefined) => (x === null || x === undefined ? '—' : `${Math.round(x * 100)}%`);
 
 export function describe(r: Result): string {
   const lines = [`${r.id} · ${r.channel ?? ''} · ${r.title ?? ''} (${r.video.duration} s, ${r.video.width}x${r.video.height} @${r.video.fps})${r.note ? ` · ${r.note}` : ''}`];
+  if (r.source === 'audio' && r.transcribed && r.metrics) {
+    const tr = r.transcribed;
+    lines.push(`  by ear: ${r.audio?.heard ?? 0} notes heard in ${r.audio?.seconds ?? 0} s of sound → ${tr.notes} notes, ${tr.timeSig}, ${tr.bpm} bpm, hands: ${tr.hands}, ${tr.measures} bars`);
+    lines.push(melodyLine(r));
+    lines.push(`  ${r.alignment}`);
+    return lines.join('\n');
+  }
   if (!r.keyboard) {
     lines.push('  no keyboard found');
     return lines.join('\n');
@@ -468,12 +544,14 @@ export function describe(r: Result): string {
   const t = r.tracker!;
   const tr = r.transcribed!;
   lines.push(`  tracker: ${t.frames} frames, ${t.skipped} skipped, bar speed ${t.speed ?? '—'} px/s, ${t.raw} raw notes${t.playable ? '' : ' (NOT PLAYABLE: the app would offer to listen instead)'} → ${tr.notes} notes, ${tr.timeSig}, ${tr.bpm} bpm, hands: ${tr.hands}, ${tr.measures} bars${tr.octave ? `, moved ${tr.octave > 0 ? '+' : ''}${tr.octave} octave` : ''}`);
-  const m = r.metrics!;
-  lines.push(
-    `  melody ${m.libNotes} notes: found ${pct(m.found)}, wrong ${pct(m.wrong)}, extra ${pct(m.extra)} · hands ${pct(m.hands)} · rhythm ${pct(m.rhythm)} · bars ${pct(m.bars)} · transposed ${m.transposition >= 0 ? '+' : ''}${m.transposition} · beat ×${m.beatFactor.toFixed(2)} · ${r.seconds} s`,
-  );
+  lines.push(melodyLine(r));
   lines.push(`  ${r.alignment}`);
   return lines.join('\n');
+}
+
+function melodyLine(r: Result): string {
+  const m = r.metrics!;
+  return `  melody ${m.libNotes} notes: found ${pct(m.found)}, wrong ${pct(m.wrong)}, extra ${pct(m.extra)} · hands ${pct(m.hands)} · rhythm ${pct(m.rhythm)} · bars ${pct(m.bars)} · transposed ${m.transposition >= 0 ? '+' : ''}${m.transposition} · beat ×${m.beatFactor.toFixed(2)} · ${r.seconds} s`;
 }
 
 export function table(results: Result[]): string {
@@ -481,6 +559,10 @@ export function table(results: Result[]): string {
   const sep = '|---|---|---|---|---|---|---|---|---|---|---|';
   const rows = results.map((r) => {
     const who = `${r.channel ?? r.id}${r.note ? ` (${r.note})` : ''}`;
+    if (r.source === 'audio' && r.metrics && r.transcribed) {
+      const m = r.metrics;
+      return `| ${who} | ${r.piece} | ear | ${pct(m.found)} | ${pct(m.wrong)} | ${pct(m.extra)} | ${pct(m.hands)} | ${pct(m.rhythm)} | ${pct(m.bars)} | ${r.transcribed.timeSig} | ${Math.round(r.transcribed.bpm)} |`;
+    }
     if (!r.keyboard || !r.metrics || !r.transcribed) return `| ${who} | ${r.piece} | — | no keyboard | | | | | | | |`;
     if (r.tracker?.playable === false) return `| ${who} | ${r.piece} | ${r.keyboard.keys} | keys do not light up | | | | | | | |`;
     const m = r.metrics;
@@ -496,20 +578,20 @@ export function summary(results: Result[]): string {
     const xs = ok.map((r) => f(r.metrics!)).filter((x): x is number => x !== null);
     return xs.length ? xs.reduce((a, v) => a + v, 0) / xs.length : null;
   };
-  return `${ok.length}/${results.length} with lit keys · found ${pct(mean((m) => m.found))} · wrong ${pct(mean((m) => m.wrong))} · extra ${pct(mean((m) => m.extra))} · hands ${pct(mean((m) => m.hands))} · rhythm ${pct(mean((m) => m.rhythm))} · bars ${pct(mean((m) => m.bars))}`;
+  return `${ok.length}/${results.length} ${results.some((r) => r.source === 'audio') ? 'heard' : 'with lit keys'} · found ${pct(mean((m) => m.found))} · wrong ${pct(mean((m) => m.wrong))} · extra ${pct(mean((m) => m.extra))} · hands ${pct(mean((m) => m.hands))} · rhythm ${pct(mean((m) => m.rhythm))} · bars ${pct(mean((m) => m.bars))}`;
 }
 
-export function compare(before: Result[], after: Result[]): string {
+export function compare(before: Result[], after: Result[], labels: [string, string] = ['before', 'after']): string {
   const by = new Map(after.map((r) => [r.id, r]));
   const cell = (a: number | null | undefined, b: number | null | undefined) => (a === b ? pct(a) : `${pct(a)} → ${pct(b)}`);
   const rows = before.map((b) => {
     const a = by.get(b.id);
-    if (!a) return `| ${b.channel ?? b.id} | ${b.piece} | missing after |`;
+    if (!a) return `| ${b.channel ?? b.id} | ${b.piece} | missing in ${labels[1]} |`;
     const mb = b.tracker?.playable === false ? null : b.metrics;
     const ma = a.tracker?.playable === false ? null : a.metrics;
     return `| ${b.channel ?? b.id}${b.note ? ` (${b.note})` : ''} | ${b.piece} | ${cell(mb?.found, ma?.found)} | ${cell(mb?.wrong, ma?.wrong)} | ${cell(mb?.extra, ma?.extra)} | ${cell(mb?.hands, ma?.hands)} | ${cell(mb?.rhythm, ma?.rhythm)} | ${cell(mb?.bars, ma?.bars)} | ${b.transcribed?.timeSig ?? '—'}${a.transcribed?.timeSig !== b.transcribed?.timeSig ? ` → ${a.transcribed?.timeSig ?? '—'}` : ''} |`;
   });
-  return ['| video | piece | found | wrong | extra | hands | rhythm | bars | time sig |', '|---|---|---|---|---|---|---|---|---|', ...rows, '', `before: ${summary(before)}`, `after:  ${summary(after)}`].join('\n');
+  return ['| video | piece | found | wrong | extra | hands | rhythm | bars | time sig |', '|---|---|---|---|---|---|---|---|---|', ...rows, '', `${labels[0]}: ${summary(before)}`, `${labels[1]}: ${summary(after)}`].join('\n');
 }
 
 /* ---------- command line ---------- */
@@ -561,7 +643,8 @@ export async function main(args: string[]): Promise<number> {
   if (cmp >= 0) {
     const before = JSON.parse(readFileSync(args[cmp + 1], 'utf8')) as Result[];
     const after = JSON.parse(readFileSync(args[cmp + 2], 'utf8')) as Result[];
-    console.log(compare(before, after));
+    const labels = arg(args, '--labels')?.split(',');
+    console.log(compare(before, after, labels && labels.length === 2 ? [labels[0], labels[1]] : undefined));
     return 0;
   }
   const out = arg(args, '--out');
@@ -588,10 +671,17 @@ export async function main(args: string[]): Promise<number> {
     }
     entries = [{ id: basename(file).replace(/\.[^.]+$/, ''), file, piece }];
   }
+  // --shard k/n: every n-th entry from the k-th, for several processes side by side
+  const shard = arg(args, '--shard');
+  if (shard) {
+    const [k, n] = shard.split('/').map(Number);
+    entries = entries.filter((_, i) => i % n === k);
+  }
+  const bp = args.includes('--audio') ? await basicPitchFromDisk() : null;
   const results: Result[] = [];
   for (const e of entries) {
     try {
-      const r = await benchOne(e, out, peek);
+      const r = bp ? await benchAudio(e, out, bp) : await benchOne(e, out, peek);
       results.push(r);
       console.log(describe(r));
     } catch (err) {

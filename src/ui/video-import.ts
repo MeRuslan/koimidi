@@ -13,7 +13,8 @@ import type { Frame } from '../video/frame';
 import { sameKeyboard, type KeyboardLayout } from '../video/keyboard';
 import { KeyTracker, playable, type RawNote } from '../video/tracker';
 import { octaveHint, toMidi, transcribe, type Transcribed } from '../video/transcribe';
-import { YouTubePlayer, YT_STATE, youTubeId, youTubeStart, type YouTubeProblem } from '../video/youtube';
+import { fitOffset, type ClockSample } from '../video/clock';
+import { YouTubePlayer, YT_STATE, youTubeId, youTubeProblemOf, youTubeStart, type YouTubeProblem } from '../video/youtube';
 import { onThemeChange, palette } from '../theme';
 import { $, el, formatDuration } from './dom';
 
@@ -74,6 +75,8 @@ export class VideoImportView {
   private preview: ReturnType<typeof setTimeout>[] = [];
   /** The file was paused because the tab was hidden. */
   private heldHidden = false;
+  /** Moments seen on both the capture clock and the YouTube player's, so the piece can be placed in the video. */
+  private clock: ClockSample[] = [];
   private scratch = document.createElement('canvas');
 
   constructor(private app: App) {
@@ -211,6 +214,7 @@ export class VideoImportView {
     this.octave = 0;
     this.frozenSince = null;
     this.frozenTotal = 0;
+    this.clock = [];
     this.status('');
     this.buttons();
   }
@@ -246,8 +250,7 @@ export class VideoImportView {
       this.ready(t('video.ready'));
     } catch (e) {
       if (gen !== this.gen) return;
-      const m = (e as Error).message;
-      this.problem(m === 'youtube-embed' ? 'embed' : m === 'youtube-missing' ? 'missing' : m === 'youtube-error' ? 'error' : 'unreachable');
+      this.problem(youTubeProblemOf(e) ?? 'unreachable');
     }
   }
 
@@ -527,6 +530,7 @@ export class VideoImportView {
     this.frozenSince = null;
     this.frozenTotal = 0;
     this.recStart = NaN;
+    this.clock = [];
     g.onFrame = (band, t, top) => {
       if (Number.isNaN(this.recStart)) this.recStart = t;
       this.lastBand = { frame: band, top };
@@ -554,6 +558,7 @@ export class VideoImportView {
     clearInterval(this.live);
     this.live = setInterval(() => {
       this.drawSeen();
+      this.sampleClock();
       const ctl = this.control();
       if (this.phase === 'listening') {
         const time = ctl ? `${formatDuration(ctl.time())} / ${formatDuration(ctl.duration())}` : formatDuration(this.take?.seconds ?? 0);
@@ -567,6 +572,20 @@ export class VideoImportView {
       this.status(t('video.recording', { notes: notesLabel(n), time }));
       if (ctl && ctl.duration()) ($('viProgress') as HTMLElement).style.width = `${Math.min(100, (100 * ctl.time()) / ctl.duration())}%`;
     }, 150);
+  }
+
+  /**
+   * While the YouTube video plays, note where it is against the clock the
+   * notes are timed by: the wall clock less the pauses while recording (the
+   * tracker's), or the recorded sound's while listening.
+   */
+  private sampleClock(): void {
+    const yt = this.yt;
+    if (!yt || yt.state !== YT_STATE.PLAYING) return;
+    if (this.phase === 'recording') {
+      if (this.frozenSince !== null) return;
+      this.clock.push({ c: performance.now() / 1000 - this.frozenTotal, v: yt.time });
+    } else if (this.phase === 'listening' && this.take) this.clock.push({ c: this.take.seconds, v: yt.time });
   }
 
   private drawSeen(): void {
@@ -687,6 +706,7 @@ export class VideoImportView {
     stream.getAudioTracks()[0].addEventListener('ended', () => gen === this.gen && void this.stopListening());
     this.take = new AudioTake(stream);
     this.phase = 'listening';
+    this.clock = [];
     const ctl = this.control();
     if (ctl) {
       ctl.setSpeed(1);
@@ -848,10 +868,19 @@ export class VideoImportView {
     this.stopPreview();
     const name = $<HTMLInputElement>('viName').value.trim() || t('video.untitled');
     const bytes = toMidi(r, name);
-    const origin = this.kind === 'youtube' ? this.link : undefined;
+    let video: { origin: string; start?: number; speed?: number } | undefined;
+    if (this.kind === 'youtube') {
+      // the second of the video where the first bar begins: the piece's start on the capture clock,
+      // carried over to the player's by the samples taken while it played (at the chosen speed, or
+      // at full speed when it was listened to)
+      const speed = this.fromAudio ? 1 : this.speed;
+      const offset = fitOffset(this.clock, speed);
+      const start = offset !== null && r.start !== undefined ? Math.max(0, offset + speed * r.start) : undefined;
+      video = { origin: this.link, start, speed };
+    }
     this.reset();
     $('vimport').hidden = true;
-    await this.app.openTranscription(bytes, name, origin);
+    await this.app.openTranscription(bytes, name, video);
   }
 
   private again(): void {

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+The tutorial on the practice screen.
+
+- **Video** on the practice screen, for a piece recognised from a YouTube link: the tutorial itself in YouTube's own player (koimidi keeps only the link, never the video), between the strip of bars and the stage, in step with the bars. It follows the tempo slider, waits with the bars in Learn mode, plays along in In tempo and Listen, and jumps with a click on a bar or a restart; in Listen mode the sound comes from the video and the synth keeps quiet. A switch in the rail turns it off and on, remembered in the settings. Offline, or when YouTube does not open (or the author forbids the video outside YouTube), a line says so and the piece works as before
+- The import notes where the piece's first bar lies in the video and the speed it was watched at, so a piece recognised before this version has no video on the practice screen until it is recognised again
+- The tempo of a recognised piece is the slope of a line through the whole pulse rather than the mean gap between notes: finer, so the video stays with the bars to the end of a long piece
+
 ## v0.6.1 — 2026-10-25
 
 Pieces from videos: a held-out check on 34 tutorials from other channels (Rutube and Dailymotion mirrors of PlutaX, PHianonize, Sheet Music Boss, Betacustic, Toms Mucenieks, Piano Tutorial Easy, OnlinePianist, PianoKafe and others, two keyboard-with-sheet-music renderers, three glow visualisers, a vertical short and five filmed pianos) showed the recognition tuned to the two videos it was built on. Reworked to take more from the video itself and fewer fixed numbers. Over the 28 videos where a lit keyboard was found, the melody notes found went from 54% to 85%, wrong notes from 5% to 2%, extra notes from 6% to 3%, the rhythm of neighbouring notes from 60% to 89% and the bar lines from 34% to 62%; two of the filmed pianos are now told apart and sent to listening by ear.

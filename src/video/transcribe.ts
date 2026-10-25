@@ -26,6 +26,8 @@ export interface Transcribed {
   /** 'color': hands told apart by the colour of the keys; 'none': one colour, the importer splits by pitch. */
   hands: 'color' | 'none';
   measures: number;
+  /** Where the first bar begins, in the seconds of the input (absent without notes). */
+  start?: number;
 }
 
 export interface TranscribeOptions {
@@ -504,11 +506,47 @@ export function transcribe(raw: RawNote[], opts: TranscribeOptions = {}): Transc
   const ph = phase + (opts.shift ?? 0) * tpq;
   const firstOn = Math.min(...at);
   const downbeat = ph + L * Math.floor((firstOn - ph) / L);
-  const bpm = Math.round((60 / (tau * tpq * (opts.speed ?? 1))) * 10) / 10;
+  // the tempo of the whole piece, and where its first bar begins: a line through the pulse from the
+  // first note to the last. The gaps between onsets gave the tatum to within a frame or so; the line,
+  // with the whole piece as its lever, is finer, so a video played along stays with the bars to the end
+  const line = pulseLine(pulse, firstOn, Math.max(...at), tau);
+  const bpm = Math.round((60 / (line.period * tpq * (opts.speed ?? 1))) * 10) / 10;
+  const start = line.origin + line.period * downbeat;
   const out: TranscribedNote[] = notes.map((n, i) => ({ pitch: n.pitch, t: (noteOn[i] - downbeat) / tpq, dur: noteDur[i] / tpq, hand: hands ? hands[i] : null }));
   out.sort((a, b) => a.t - b.t || a.pitch - b.pitch);
   const last = Math.max(...out.map((n) => n.t + n.dur));
-  return { notes: out, bpm, timeSig, hands: hands ? 'color' : 'none', measures: Math.ceil(last / (L / tpq) - 1e-6) };
+  return { notes: out, bpm, timeSig, hands: hands ? 'color' : 'none', measures: Math.ceil(last / (L / tpq) - 1e-6), start };
+}
+
+/**
+ * The pulse between tatums `lo` and `hi` as a straight line, by least squares:
+ * the time of tatum 0 and the seconds per tatum. Over too few tatums, or where
+ * the line disagrees with the tatum period by more than a few percent (the
+ * pulse wandered), the period is the tatum's and the line goes through the
+ * pulse's mean.
+ */
+function pulseLine(pulse: number[], lo: number, hi: number, period: number): { origin: number; period: number } {
+  lo = Math.max(0, Math.floor(lo));
+  hi = Math.min(pulse.length - 1, Math.ceil(hi));
+  const n = hi - lo + 1;
+  if (n < 2) return { origin: pulse[Math.max(0, Math.min(pulse.length - 1, lo))] - period * lo, period };
+  let sk = 0;
+  let st = 0;
+  for (let k = lo; k <= hi; k++) {
+    sk += k;
+    st += pulse[k];
+  }
+  const mk = sk / n;
+  const mt = st / n;
+  let num = 0;
+  let den = 0;
+  for (let k = lo; k <= hi; k++) {
+    num += (k - mk) * (pulse[k] - mt);
+    den += (k - mk) ** 2;
+  }
+  const slope = n >= 8 && den > 0 ? num / den : period;
+  const p = Math.abs(slope / period - 1) <= 0.03 ? slope : period;
+  return { origin: mt - p * mk, period: p };
 }
 
 /**

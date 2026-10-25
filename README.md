@@ -65,6 +65,8 @@ The site must be served over `https://` or opened from `localhost` / a local fil
 
 A video that does not play outside YouTube, or one on another site: open it in another tab and choose **Video in another tab**. A file on your computer: **Video file**, or drop it on the page.
 
+A piece recognised from a YouTube link brings the tutorial with it: the **Video** switch in the rail of the practice screen shows it in YouTube's player above the stage, in step with the bars. It follows the tempo slider, waits with the bars in Learn mode, and in Listen mode its sound replaces the synth, so you can check the notes against the real thing. koimidi keeps only the link; the video plays from YouTube, so it needs a connection.
+
 What works: Synthesia-style renderers of most kinds (keys lit whole or in part, letters on the keys and on the bars, a drawn keyboard above a filmed one, fades and title cards, slow tutorials). What does not: a filmed piano whose keys do not light up (koimidi says so and offers to listen instead), and glow-only visualisers where the keys stay dark.
 
 Shortcuts: `Space` start/pause · `Enter` restart · `[` `]` loop start/end at the current bar · `Z` `X` shift the computer-keyboard octave · `1`–`5` finger for the selected bar · `Esc` back to the library.
@@ -78,7 +80,7 @@ There is no account, no analytics and no network requests after the page loads, 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # vitest: parsers, MusicXML export, fingering, practice engine, progress, recorder, library, video recognition
+npm test           # vitest: parsers, MusicXML export, fingering, practice engine, progress, recorder, library, video recognition, the video in step with the bars
 npm run build      # type-check + production build into dist/
 node scripts/bench-video.mjs video.mp4 --piece ode-to-joy   # the video recognition against a library piece (needs ffmpeg)
 node scripts/bench-video.mjs --audio video.mp4 --piece ode-to-joy   # the same for the fallback by ear
@@ -89,14 +91,14 @@ Plain TypeScript + Vite, no UI framework. Layout of `src/`:
 | Folder | What lives there |
 | --- | --- |
 | `score/` | the score model, MIDI and MusicXML importers, MusicXML export, the compact library notation, automatic fingering and the player's finger edits |
-| `practice/` | the practice engine (modes, waiting, hit windows, loop range, octave tolerance, count-in, metronome, the trainer's hand, pass statistics), progress and the recorder |
+| `practice/` | the practice engine (modes, waiting, hit windows, loop range, octave tolerance, count-in, metronome, the trainer's hand, pass statistics), progress, the recorder, and the video kept in step with the bars |
 | `render/` | the canvas renderer (falling bars, keyboard), in the colours of the current look |
 | `audio/` | the WebAudio synth and metronome, sampled instruments through SpessaSynth, sound banks (the grand piano and the player's packs) |
 | `input/` | Web MIDI and computer-keyboard input, keyboard profiles |
 | `storage/` | settings in localStorage; files, finger edits and progress in IndexedDB |
-| `video/` | pieces from videos: finding the keyboard in a frame, following the keys, beats, bars and hands, the YouTube player, tab and file capture, listening by ear with Basic Pitch, and synthetic videos for the tests |
+| `video/` | pieces from videos: finding the keyboard in a frame, following the keys, beats, bars and hands, the YouTube player, the piece's place in the video, tab and file capture, listening by ear with Basic Pitch, and synthetic videos for the tests |
 | `library/` | built-in pieces |
-| `ui/` | home, practice and "from a video" screens, the strip of bars, the hands picture, the progress sheet |
+| `ui/` | home, practice and "from a video" screens, the strip of bars, the hands picture, the video panel, the progress sheet |
 | `theme.ts`, `styles.css`, `fonts.css` | the three looks as colour tokens, the stylesheet, and the bundled fonts (Piazzolla, JetBrains Mono, Golos Text, Unbounded) |
 | `sw.js`, `pwa.ts` | the service worker (its file list is filled in by the build, see `vite.config.ts`) and its registration, update prompt and Install button |
 

@@ -26,6 +26,7 @@ import { $, download, el, formatDuration, paintRange, safeFileName, toast } from
 import { HandMap } from './hands';
 import { percent, ProgressPanel } from './progress-panel';
 import { Timeline } from './timeline';
+import { VideoPanel } from './video-panel';
 
 const DIGITS: Record<string, Finger> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5 };
 
@@ -57,6 +58,8 @@ export class PracticeView {
   private panel: ProgressPanel;
   private timeline: Timeline;
   private hands: HandMap;
+  /** the video a piece was recognised from, in step with the bars */
+  private video: VideoPanel;
   /** show which computer keys play which notes (no MIDI keyboard) */
   private letters = false;
 
@@ -64,6 +67,7 @@ export class PracticeView {
     this.stage = new Stage($<HTMLCanvasElement>('stage'));
     this.timeline = new Timeline($('tlTrack'), (from, to) => this.setRange(from, to));
     this.hands = new HandMap($('handmap'));
+    this.video = new VideoPanel();
     onThemeChange(() => {
       this.stage.refreshPalette();
       this.lastNext = '';
@@ -106,6 +110,7 @@ export class PracticeView {
       flash: (p, kind) => this.stage.flash(p, kind),
       ripple: (p, n) => this.stage.ripple(p, fingerColor(n.finger)),
       sound: (p, v, secs) => {
+        if (this.video.sounding) return; // Listen mode with the video: its sound, not the synth's
         this.app.synth.unlock();
         this.app.synth.noteOn(p, v, secs);
       },
@@ -135,6 +140,7 @@ export class PracticeView {
     this.timeline.build(score);
     this.timeline.setHeat(this.progress?.id === info.id ? this.progress : null);
     this.hands.build(score.hands);
+    this.video.open(info.video ?? null, score, s.video);
     this.active = true;
     this.closeSettings();
     this.closePicker();
@@ -153,6 +159,7 @@ export class PracticeView {
     this.active = false;
     this.engine?.setPlaying(false);
     this.engine?.dispose();
+    this.video.close();
     this.app.synth.allOff();
     this.kb.releaseAll();
     this.closeSettings();
@@ -182,6 +189,7 @@ export class PracticeView {
     }
     this.renderTake();
     this.renderThemes();
+    this.video.refreshTexts();
     this.refreshPanel();
     this.dirty = true;
   }
@@ -352,6 +360,12 @@ export class PracticeView {
       this.engine.setAccompany(s.accompany);
       this.stage.fitRange();
       this.syncControls();
+    });
+    const videoOn = $<HTMLInputElement>('videoOn');
+    videoOn.addEventListener('change', () => {
+      s.video = videoOn.checked;
+      this.app.save();
+      this.video.setOn(s.video);
     });
     const tempo = $<HTMLInputElement>('tempo');
     const setTempo = (pct: number) => {
@@ -531,6 +545,8 @@ export class PracticeView {
     this.app.synth.unlock();
     this.closePicker();
     this.engine.toggle();
+    // still inside the user's gesture: the video may start with its sound
+    this.video.sync(this.engine, performance.now());
     this.hideHint();
   }
 
@@ -906,6 +922,7 @@ export class PracticeView {
     if (this.active && this.engine) {
       const wasPlaying = this.engine.playing;
       this.engine.step(dt);
+      this.video.sync(this.engine, now);
       if (wasPlaying !== this.engine.playing) this.renderPlay();
       if (this.hintUntil && now > this.hintUntil) this.hideHint();
       if (this.dirty) {

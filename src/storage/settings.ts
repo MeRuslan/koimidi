@@ -36,6 +36,8 @@ export interface Settings {
   patches: Record<string, string>;
   /** the look: paper, lacquer, console, or like the system */
   theme: ThemeChoice;
+  /** show the video a piece was recognised from on the practice screen, in step with the bars */
+  video: boolean;
   lastPieceId?: string;
 }
 
@@ -68,6 +70,7 @@ export const DEFAULT_SETTINGS: Settings = {
   instrument: 'simple',
   patches: {},
   theme: 'auto',
+  video: true,
 };
 
 function read<T>(key: string): T | null {

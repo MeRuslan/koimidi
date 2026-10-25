@@ -33,7 +33,7 @@ export interface Imported {
   stored: StoredFile;
 }
 
-export async function importFile(file: File, split: MidiSplit, extra: Pick<StoredFile, 'origin'> = {}): Promise<Imported> {
+export async function importFile(file: File, split: MidiSplit, extra: Pick<StoredFile, 'origin' | 'videoStart' | 'videoSpeed'> = {}): Promise<Imported> {
   const buf = await file.arrayBuffer();
   const bytes = new Uint8Array(buf);
   const kind = sniffKind(bytes, file.name);
@@ -55,6 +55,7 @@ export async function importFile(file: File, split: MidiSplit, extra: Pick<Store
     hands: score.hands,
     ...pitchSpan(score),
     ...(extra.origin ? { origin: extra.origin } : {}),
+    ...(extra.origin && extra.videoStart !== undefined ? { videoStart: extra.videoStart, videoSpeed: extra.videoSpeed ?? 1 } : {}),
   };
   try {
     await putFile(stored);

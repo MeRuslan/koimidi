@@ -27,6 +27,10 @@ export interface StoredFile {
   high?: number;
   /** The video a piece was recognised from (a YouTube link). */
   origin?: string;
+  /** The second of that video where the piece's first bar begins, so the trainer can play it in step. */
+  videoStart?: number;
+  /** The speed the video was watched at while recognising (0.5 = half speed); the tempo in the file is the real one. */
+  videoSpeed?: number;
 }
 
 export type StoredFileMeta = Omit<StoredFile, 'bytes'>;

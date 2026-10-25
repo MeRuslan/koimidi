@@ -51,6 +51,7 @@ interface YTPlayer {
   getVideoLoadedFraction(): number;
   getVideoData?(): { title?: string; author?: string };
   mute(): void;
+  unMute(): void;
   destroy(): void;
   getIframe(): HTMLIFrameElement;
 }
@@ -98,6 +99,12 @@ function loadApi(): Promise<YTNamespace> {
 
 /** Why a video cannot play here: 'embed' (the author forbids playing it outside YouTube), 'missing', or 'error'. */
 export type YouTubeProblem = 'embed' | 'missing' | 'error';
+
+/** The problem an error from `create` names, or null for an unreachable YouTube. */
+export function youTubeProblemOf(e: unknown): YouTubeProblem | null {
+  const m = (e as Error)?.message;
+  return m === 'youtube-embed' ? 'embed' : m === 'youtube-missing' ? 'missing' : m === 'youtube-error' ? 'error' : null;
+}
 
 export class YouTubePlayer {
   private player!: YTPlayer;
@@ -187,6 +194,10 @@ export class YouTubePlayer {
 
   mute(): void {
     this.player.mute();
+  }
+
+  unmute(): void {
+    this.player.unMute();
   }
 
   destroy(): void {

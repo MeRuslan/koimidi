@@ -179,6 +179,13 @@
           <input type="checkbox" id="accomp" class="switch"><span data-i18n="accomp"></span>
         </label>
       </div>
+
+      <div class="field" id="videoField" hidden>
+        <label class="check" data-i18n-title="video.panel.title">
+          <input type="checkbox" id="videoOn" class="switch"><span data-i18n="video.panel"></span>
+        </label>
+        <p class="field-note" data-i18n="video.panel.note"></p>
+      </div>
     </div>
 
     <div class="rail-now" id="now">
@@ -209,6 +216,11 @@
       <button id="rangeAll" type="button" class="btn ghost sm" data-i18n="bars.all"></button>
       <label class="check sm" data-i18n-title="loop.title"><input type="checkbox" id="loop" class="switch"><span data-i18n="loop"></span></label>
     </div>
+  </div>
+
+  <div id="videoPanel" class="video-panel" hidden>
+    <div id="videoBox" class="video-box"></div>
+    <p id="videoNote" class="video-note" hidden></p>
   </div>
 
   <main class="stage-wrap">

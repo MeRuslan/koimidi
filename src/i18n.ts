@@ -300,6 +300,12 @@ export const dict = {
     'video.audio.failed': 'Could not recognise the sound: {reason}',
     'video.hands.audio': 'by ear: hands split by pitch',
     'video.draft': 'Recognised by ear, so this is a draft: some notes may be wrong. Listen and compare with the video.',
+    'video.panel': 'Video',
+    'video.panel.title': 'The tutorial this piece was recognised from, played in step with the bars',
+    'video.panel.note': 'The tutorial plays in step with the bars; in Listen mode its sound replaces the synth.',
+    'video.panel.offline': 'No connection: the video cannot play now.',
+    'video.panel.unreachable': 'YouTube did not open; the piece works without the video.',
+    'video.panel.embed': 'The author does not allow this video to play outside YouTube.',
   },
   ru: {
     'app.overline': 'Тренажёр для MIDI-клавиатуры',
@@ -602,6 +608,12 @@ export const dict = {
     'video.audio.failed': 'Не удалось распознать звук: {reason}',
     'video.hands.audio': 'на слух: руки разделены по высоте',
     'video.draft': 'Распознано на слух, это черновик: часть нот может быть неверной. Послушайте и сравните с видео.',
+    'video.panel': 'Видео',
+    'video.panel.title': 'Ролик, из которого распознана пьеса, в такт полосам',
+    'video.panel.note': 'Ролик идёт в такт полосам; в режиме «Послушать» звук — из ролика, а не из синтезатора.',
+    'video.panel.offline': 'Нет сети: видео сейчас не показать.',
+    'video.panel.unreachable': 'YouTube не открылся; пьеса работает и без видео.',
+    'video.panel.embed': 'Автор не разрешает показывать это видео вне YouTube.',
   },
 } as const;
 

@@ -7,7 +7,7 @@ import { guessSize, presetRange, type KeyboardSize, type KeyRange } from './inpu
 import { Synth } from './audio/synth';
 import { applyEdits } from './score/edits';
 import type { Score } from './score/model';
-import { getFile, getFingerings, requestPersistence, touchFile, type FileKind } from './storage/files';
+import { getFile, getFingerings, requestPersistence, touchFile, type FileKind, type StoredFile } from './storage/files';
 import { loadPieceSettings, loadSettings, saveSettings, type Lang, type Settings } from './storage/settings';
 import { applyTheme, type ThemeChoice } from './theme';
 import { $, el, safeFileName, toast } from './ui/dom';
@@ -16,10 +16,24 @@ import { PracticeView } from './ui/practice';
 import { SoundSettings } from './ui/sound-settings';
 import { VideoImportView } from './ui/video-import';
 
+/** The video a piece was recognised from, when the trainer can play it in step: its link, and the second of its first bar. */
+export interface PieceVideo {
+  link: string;
+  start: number;
+  /** the speed it was watched at while recognising */
+  speed: number;
+}
+
 export interface PieceInfo {
   id: string;
   source: 'library' | 'file';
   kind?: FileKind;
+  video?: PieceVideo;
+}
+
+/** The video of a stored piece, when it was recognised from one and the second of its first bar is known. */
+function pieceVideo(f: Pick<StoredFile, 'origin' | 'videoStart' | 'videoSpeed'>): PieceVideo | undefined {
+  return f.origin && f.videoStart !== undefined ? { link: f.origin, start: f.videoStart, speed: f.videoSpeed ?? 1 } : undefined;
 }
 
 export class App {
@@ -208,7 +222,7 @@ export class App {
       const split = loadPieceSettings(id).split ?? this.settings.midiSplit;
       const score = scoreFromStored(f, split);
       void touchFile(id);
-      await this.show(score, { id, source: 'file', kind: f.kind });
+      await this.show(score, { id, source: 'file', kind: f.kind, video: pieceVideo(f) });
     } catch (e) {
       toast(t('open.failed', { name: f.name, reason: (e as Error).message }), { error: true });
     }
@@ -227,12 +241,15 @@ export class App {
     }
   }
 
-  /** A piece recognised from a video: stored like an imported MIDI file, with the video's link. */
-  async openTranscription(bytes: Uint8Array, title: string, origin?: string): Promise<void> {
+  /**
+   * A piece recognised from a video: stored like an imported MIDI file, with
+   * the video's link and, for a YouTube video, where in it the piece begins.
+   */
+  async openTranscription(bytes: Uint8Array, title: string, video?: { origin: string; start?: number; speed?: number }): Promise<void> {
     try {
       const file = new File([bytes as BlobPart], safeFileName(title, 'mid'), { type: 'audio/midi' });
-      const { score, stored } = await importFile(file, this.settings.midiSplit, { origin });
-      await this.show(score, { id: stored.id, source: 'file', kind: stored.kind });
+      const { score, stored } = await importFile(file, this.settings.midiSplit, video ? { origin: video.origin, videoStart: video.start, videoSpeed: video.speed } : {});
+      await this.show(score, { id: stored.id, source: 'file', kind: stored.kind, video: pieceVideo(stored) });
       toast(`${t('storage.saved')} · ${t('hint.fingersAuto')}`, { ms: 4000 });
     } catch (e) {
       toast(t('open.failed', { name: title, reason: (e as Error).message }), { error: true, ms: 6000 });

@@ -25,6 +25,8 @@ export interface StoredFile {
   /** Lowest and highest pitch, for the keyboard-fit badge (absent on files stored by v0.1). */
   low?: number;
   high?: number;
+  /** The video a piece was recognised from (a YouTube link). */
+  origin?: string;
 }
 
 export type StoredFileMeta = Omit<StoredFile, 'bytes'>;

@@ -40,6 +40,10 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17v3h16v-3"/><path d="M12 4v12"/><path d="m7 9 5-5 5 5"/></svg>
           <span data-i18n="open.button"></span>
         </button>
+        <button id="videoBtn" type="button" class="big">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z" fill="currentColor"/></svg>
+          <span data-i18n="video.button"></span>
+        </button>
         <span class="drop-hint" data-i18n="open.drop"></span>
       </div>
       <p class="fine" data-i18n="open.formats"></p>
@@ -213,6 +217,94 @@
     <span class="fl edit" data-i18n="legend.edit"></span>
     <span class="keys" data-i18n="shortcuts"></span>
   </footer>
+</section>
+
+<!-- ===== From a video ===== -->
+<section id="vimport" class="screen vimport" hidden>
+  <header class="bar">
+    <button id="vBack" type="button" class="ghost icon-btn" data-i18n-title="back">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <div class="piece">
+      <b data-i18n="video.title"></b>
+      <small data-i18n="video.sub"></small>
+    </div>
+  </header>
+  <main class="vi-main">
+    <section id="viSource" class="vi-card">
+      <h2 data-i18n="video.h.source"></h2>
+      <form id="viLinkForm" class="vi-link">
+        <input id="viLink" type="text" inputmode="url" autocomplete="off" spellcheck="false" data-i18n-placeholder="video.link.ph" aria-label="YouTube">
+        <button type="submit" class="primary" data-i18n="video.link.open"></button>
+      </form>
+      <p id="viLinkNote" class="fine warn"></p>
+      <div class="vi-alt">
+        <span class="fine" data-i18n="video.or"></span>
+        <button id="viTab" type="button" class="small" data-i18n="video.tab"></button>
+        <button id="viFile" type="button" class="small" data-i18n="video.file"></button>
+        <input id="viFileInput" type="file" accept="video/*,.mp4,.webm,.mkv,.mov" hidden>
+      </div>
+      <p class="vi-how" data-i18n="video.how"></p>
+      <p class="fine" data-i18n="video.privacy"></p>
+    </section>
+
+    <section id="viWork" class="vi-work" hidden>
+      <div class="vi-player"><div id="viPlayer"></div></div>
+      <div class="vi-panel">
+        <p id="viStatus" class="vi-status" role="status" aria-live="polite"></p>
+        <div id="viProgressRow" class="vi-progress" hidden><div id="viProgress"></div></div>
+        <canvas id="viSeen" class="vi-seen" aria-hidden="true" hidden></canvas>
+        <div class="vi-actions">
+          <button id="viStart" type="button" class="primary" hidden></button>
+          <label id="viSpeedRow" class="vi-speed" hidden><span data-i18n="video.speed"></span>
+            <select id="viSpeed">
+              <option value="1" data-i18n="video.speed.1"></option>
+              <option value="0.5" data-i18n="video.speed.05"></option>
+            </select>
+          </label>
+          <button id="viStop" type="button" class="primary" data-i18n="video.stop" hidden></button>
+          <button id="viAudio" type="button" class="small" data-i18n="video.audio.button" hidden></button>
+          <button id="viAnother" type="button" class="ghost small" data-i18n="video.another"></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="viResult" class="vi-card" hidden>
+      <h2 data-i18n="video.result"></h2>
+      <label class="vi-name"><span data-i18n="video.name"></span><input id="viName" type="text" autocomplete="off"></label>
+      <p id="viSummary" class="vi-summary"></p>
+      <p id="viDraft" class="fine warn" data-i18n="video.draft" hidden></p>
+      <canvas id="viRoll" class="vi-roll" aria-hidden="true"></canvas>
+      <div class="vi-rows">
+        <label class="vi-row"><span data-i18n="video.meter"></span>
+          <select id="viMeter">
+            <option value="auto"></option>
+            <option value="4/4">4/4</option>
+            <option value="3/4">3/4</option>
+            <option value="2/4">2/4</option>
+            <option value="12/8">12/8</option>
+            <option value="9/8">9/8</option>
+            <option value="6/8">6/8</option>
+          </select>
+        </label>
+        <div class="vi-row"><span data-i18n="video.shift"></span>
+          <button id="viEarlier" type="button" class="small" data-i18n="video.shift.earlier"></button>
+          <button id="viLater" type="button" class="small" data-i18n="video.shift.later"></button>
+        </div>
+        <div class="vi-row" id="viOctaveRow" hidden><span data-i18n="video.octave"></span>
+          <button id="viOctDown" type="button" class="small">−</button>
+          <b id="viOctaveVal" class="vi-oct"></b>
+          <button id="viOctUp" type="button" class="small">+</button>
+          <span class="fine" data-i18n="video.octave.note"></span>
+        </div>
+      </div>
+      <div class="vi-actions">
+        <button id="viOpen" type="button" class="primary" data-i18n="video.open"></button>
+        <button id="viListen" type="button" class="small" data-i18n="video.listen"></button>
+        <button id="viAgain" type="button" class="ghost small" data-i18n="video.again"></button>
+      </div>
+    </section>
+  </main>
 </section>
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>

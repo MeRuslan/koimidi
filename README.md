@@ -2,6 +2,7 @@
 
 **koimidi** is a free, open-source piano trainer for MIDI keyboards that runs in the browser.
 Falling notes with finger numbers, a "wait for the right key" mode, and built-in sound for keyboards that have none.
+Learn the built-in pieces, your own MIDI and MusicXML files, or any piece from a Synthesia-style piano tutorial video.
 No sign-up, no server: your files are parsed on your device and never leave it.
 
 **Try it:** https://meruslan.github.io/koimidi/ · [По-русски](README.ru.md)
@@ -21,6 +22,7 @@ Learning a melody without reading sheet music means you want three things at onc
 - **A real grand piano.** Pick *Grand piano · Salamander* in Settings: a sampled Yamaha C5 (about 10 MB, downloaded once, then works offline) played by [SpessaSynth](https://github.com/spessasus/spessasynth_lib).
 - **Your own SoundFonts.** Add any `.sf2` or `.sf3` pack and choose its instrument; packs stay in your browser.
 - **Open MIDI and MusicXML** (`.mid`, `.midi`, `.musicxml`, `.xml`, compressed `.mxl`). Parsing happens in the browser; files are kept in your browser's storage (IndexedDB) for next time.
+- **Pieces from videos.** Paste a YouTube link to a Synthesia-style tutorial (falling notes that light up the keys), pick a video in another browser tab, or open a video file. koimidi plays the video, finds the keyboard in it, notes down every key that lights up, tells the hands apart by colour, and works out the tempo and the bars; the piece lands in *Your files* with fingering, like any MIDI file. Check the bars on a small piano roll, change the time signature or move the bar lines by a beat, listen, then practise. Videos without a lit keyboard can be recognised by ear instead (a draft: some notes may be wrong, and the hands are split by pitch).
 - **Automatic fingering** (right and left hand) for files that carry none, using a Parncutt-style ergonomic cost model and dynamic programming. Fingering from MusicXML `<fingering>` is kept.
 - **Your own fingering.** Click a bar and pick a finger (or press `1`–`5`). The choice is kept in this browser for that piece, the automatic fingering rearranges the notes around it, and a small dot marks the fingers you chose.
 - **Export MusicXML with fingering**, yours included, to print the piece or open it in MuseScore and other notation programs.
@@ -53,18 +55,26 @@ The site must be served over `https://` or opened from `localhost` / a local fil
 6. Switch to *In tempo* when it feels easy, with the metronome if it helps. Record a take with ● to hear yourself.
 7. Open **Progress** (the chart button) to see which bars still go wrong, and loop them.
 
+### A piece from a video
+
+1. Press **From a video** on the home screen and paste a YouTube link. Easy versions work best: search for "<song> easy piano tutorial".
+2. Press **Recognise** and let the browser share this tab: that is how koimidi sees the keyboard in the player. The video plays from the start; the strip under it shows the keys koimidi sees lit. Fast piece? Choose half speed first; it is more accurate.
+3. When the video ends (or you press **Done**), check the result: title, time signature, bar lines, octave if the video shows only part of the keyboard. **Listen**, then **Open in the trainer**.
+
+A video that does not play outside YouTube, or one on another site: open it in another tab and choose **Video in another tab**. A file on your computer: **Video file**, or drop it on the page.
+
 Shortcuts: `Space` start/pause · `Enter` restart · `[` `]` loop start/end at the current bar · `Z` `X` shift the computer-keyboard octave · `1`–`5` finger for the selected bar · `Esc` back to the library.
 
 ## Privacy
 
-There is no account, no analytics and no network requests after the page loads, apart from the browser checking for a new version of the app and the grand piano sound, which is downloaded from this same site the first time you choose it. Imported files, SoundFont packs, the fingers you chose, your progress and your settings are stored only in your browser (localStorage, IndexedDB and Cache Storage); clearing site data removes them. Recordings stay in memory until you save them. Nothing is uploaded anywhere.
+There is no account, no analytics and no network requests after the page loads, apart from the browser checking for a new version of the app, the grand piano sound and the listening model (about 1 MB, for recognising a video by ear), which are downloaded from this same site the first time you use them, and YouTube's own player when you open a YouTube link (it plays as on YouTube, under YouTube's terms). While recognising a video koimidi looks at the shared tab frame by frame in memory; no frame and no sound is stored or sent anywhere, and sharing stops when the recognition does. Imported files, SoundFont packs, the fingers you chose, your progress and your settings are stored only in your browser (localStorage, IndexedDB and Cache Storage); clearing site data removes them. Recordings stay in memory until you save them. Nothing is uploaded anywhere.
 
 ## Development
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # vitest: parsers, MusicXML export, fingering, practice engine, progress, recorder, library
+npm test           # vitest: parsers, MusicXML export, fingering, practice engine, progress, recorder, library, video recognition
 npm run build      # type-check + production build into dist/
 ```
 
@@ -78,8 +88,9 @@ Plain TypeScript + Vite, no UI framework. Layout of `src/`:
 | `audio/` | the WebAudio synth and metronome, sampled instruments through SpessaSynth, sound banks (the grand piano and the player's packs) |
 | `input/` | Web MIDI and computer-keyboard input, keyboard profiles |
 | `storage/` | settings in localStorage; files, finger edits and progress in IndexedDB |
+| `video/` | pieces from videos: finding the keyboard in a frame, following the keys, beats, bars and hands, the YouTube player, tab and file capture, listening by ear with Basic Pitch, and synthetic videos for the tests |
 | `library/` | built-in pieces |
-| `ui/` | home and practice screens, the progress panel |
+| `ui/` | home, practice and "from a video" screens, the progress panel |
 | `sw.js`, `pwa.ts` | the service worker (its file list is filled in by the build, see `vite.config.ts`) and its registration, update prompt and Install button |
 
 Deployment is a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs the tests, builds, and publishes `dist/` to GitHub Pages on every push to `main`. The build uses a relative base path, so it works from any folder or domain.
@@ -114,6 +125,7 @@ Every release starts with a session on a real controller (Komplete Kontrol M32, 
 - **v0.2 — learn your own piece** (done). Edit a finger by clicking its bar; edits are kept in the browser per file and the automatic fingering works around them. Export MusicXML with `<fingering>`. Count-in and metronome for the in-tempo mode. Keyboard profile: your controller's range on screen and a warning when a piece does not fit it. Record your playing and export it as `.mid`.
 - **v0.3 — two hands for real** (done). Practise one hand while the trainer plays the other. Progress statistics per piece and per bar range. Offline use as a PWA.
 - **v0.4 — sound** (done). Sampled piano (Salamander Grand Piano as SF3 through SpessaSynth) and your own SoundFont packs (SF2/SF3). More public-domain pieces in the library.
+- **v0.5 — pieces from videos** (done). Recognise a Synthesia-style video (YouTube link, another tab, or a file) into a piece with hands, tempo and bars; listen by ear when there is no lit keyboard.
 - **Deferred:** vector-PDF import in the browser, MIDI output to an external synth, scanned-sheet recognition (OMR).
 
 ## Credits and licenses
@@ -122,6 +134,8 @@ Every release starts with a session on a real controller (Komplete Kontrol M32, 
 - Library pieces: public-domain works typeset for this project.
 - Grand piano sound: [Salamander Grand Piano V3](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html) by Alexander Holm, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); SF2 assembly by FreePats; reduced for koimidi as described in `public/sounds/salamander-grand-piano.txt`. This file is under CC BY 3.0, not MIT.
 - [SpessaSynth](https://github.com/spessasus/spessasynth_lib) (Apache-2.0), [@tonejs/midi](https://github.com/Tonejs/Midi) (MIT), [fflate](https://github.com/101arrowz/fflate) (MIT), fonts [Golos Text](https://github.com/fontsource/fontsource) and [Unbounded](https://github.com/fontsource/fontsource) via Fontsource (SIL OFL).
+- Recognition by ear: [Basic Pitch](https://github.com/spotify/basic-pitch-ts) by Spotify (Apache-2.0), running on [TensorFlow.js](https://github.com/tensorflow/tfjs) (Apache-2.0); loaded only when used.
+- Beat tracking after Ellis, *Beat tracking by dynamic programming* (2007).
 - Fingering cost model after Parncutt, Sloboda, Clarke, Raekallio & Desain, *An ergonomic model of keyboard fingering for melodic fragments* (1997).
 
 The name: Bashkir *көй* ("melody") + koi carp in a pond + MIDI.

@@ -9,10 +9,11 @@ import { applyEdits } from './score/edits';
 import type { Score } from './score/model';
 import { getFile, getFingerings, requestPersistence, touchFile, type FileKind } from './storage/files';
 import { loadPieceSettings, loadSettings, saveSettings, type Lang, type Settings } from './storage/settings';
-import { $, toast } from './ui/dom';
+import { $, safeFileName, toast } from './ui/dom';
 import { HomeView } from './ui/home';
 import { PracticeView } from './ui/practice';
 import { SoundSettings } from './ui/sound-settings';
+import { VideoImportView } from './ui/video-import';
 
 export interface PieceInfo {
   id: string;
@@ -27,6 +28,7 @@ export class App {
   home: HomeView;
   practice: PracticeView;
   sound: SoundSettings;
+  video: VideoImportView;
   current: PieceInfo | null = null;
   private unlockToastShown = false;
 
@@ -35,6 +37,7 @@ export class App {
     this.home = new HomeView(this);
     this.practice = new PracticeView(this);
     this.sound = new SoundSettings(this);
+    this.video = new VideoImportView(this);
     void this.sound.restore();
     applyI18n();
     $('version').textContent = `v${__APP_VERSION__}`;
@@ -80,6 +83,7 @@ export class App {
       if (f) void this.openFile(f);
     });
     $('openBtn').addEventListener('click', () => input.click());
+    $('videoBtn').addEventListener('click', () => this.video.open());
     this.setupDrop();
   }
 
@@ -211,6 +215,19 @@ export class App {
     }
   }
 
+  /** A piece recognised from a video: stored like an imported MIDI file, with the video's link. */
+  async openTranscription(bytes: Uint8Array, title: string, origin?: string): Promise<void> {
+    try {
+      const file = new File([bytes as BlobPart], safeFileName(title, 'mid'), { type: 'audio/midi' });
+      const { score, stored } = await importFile(file, this.settings.midiSplit, { origin });
+      await this.show(score, { id: stored.id, source: 'file', kind: stored.kind });
+      toast(`${t('storage.saved')} · ${t('hint.fingersAuto')}`, { ms: 4000 });
+    } catch (e) {
+      toast(t('open.failed', { name: title, reason: (e as Error).message }), { error: true, ms: 6000 });
+      this.showHome();
+    }
+  }
+
   /** Open the practice screen with the player's finger edits for this piece applied. */
   private async show(score: Score, info: PieceInfo): Promise<void> {
     const edits = await getFingerings(info.id);
@@ -219,6 +236,7 @@ export class App {
     this.settings.lastPieceId = info.id;
     this.save();
     $('home').hidden = true;
+    $('vimport').hidden = true;
     $('practice').hidden = false;
     this.practice.open(score, info, edits);
   }
@@ -226,6 +244,7 @@ export class App {
   showHome(): void {
     this.practice.close();
     $('practice').hidden = true;
+    $('vimport').hidden = true;
     $('home').hidden = false;
     this.current = null;
     this.home.render();
@@ -253,7 +272,13 @@ export class App {
       depth = 0;
       overlay.hidden = true;
       const f = e.dataTransfer?.files?.[0];
-      if (f) void this.openFile(f);
+      if (!f) return;
+      if (f.type.startsWith('video/') || /\.(mp4|webm|mkv|mov|m4v)$/i.test(f.name)) {
+        this.practice.close();
+        $('practice').hidden = true;
+        this.video.open();
+        void this.video.openFile(f);
+      } else void this.openFile(f);
     });
   }
 }

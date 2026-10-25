@@ -43,7 +43,7 @@ button { cursor: pointer; }
 [hidden] { display: none !important; }
 
 /* ---------- controls ---------- */
-button.primary, button.ghost, button.icon-btn, button.small, .seg label span, .chip {
+button.primary, button.ghost, button.icon-btn, button.small, button.big, .seg label span, .chip {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   height: 34px; padding: 0 12px;
   border: 1px solid var(--line); border-radius: var(--radius);
@@ -53,7 +53,7 @@ button.primary, button.ghost, button.icon-btn, button.small, .seg label span, .c
 }
 button.primary { background: var(--water); border-color: var(--water); color: var(--water-ink); }
 button.primary:hover { filter: brightness(1.06); }
-button.primary.big { height: 46px; padding: 0 20px; font-size: 16px; border-radius: 12px; }
+button.primary.big, button.big { height: 46px; padding: 0 20px; font-size: 16px; border-radius: 12px; }
 button.ghost { background: transparent; }
 button.ghost.small, button.small { height: 28px; padding: 0 10px; font-size: 13px; font-weight: 500; }
 button:hover:not(.primary), .seg label:hover span, .chip:hover { border-color: var(--water); }
@@ -289,6 +289,48 @@ button.cell:hover { filter: brightness(1.15); }
 .fl.dim { color: var(--ink-faint); }
 .fl.edit { color: var(--ink-faint); }
 .legend .keys { margin-left: auto; }
+
+/* ---------- from a video ---------- */
+.vimport { overflow-y: auto; overflow-x: hidden; }
+.vi-main { width: min(1040px, 100%); margin: 0 auto; padding: 28px var(--pad-x) 40px; display: flex; flex-direction: column; gap: 24px; }
+.vi-card { display: flex; flex-direction: column; gap: 12px; }
+.vi-card h2 { font-size: clamp(20px, 3vw, 26px); }
+.vi-link { display: flex; gap: 8px; max-width: 720px; }
+.vi-link input, .vi-name input {
+  flex: 1; min-width: 0; height: 46px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 12px;
+  background: var(--tile); color: var(--ink); font-size: 16px;
+}
+.vi-link input:focus, .vi-name input:focus { outline: none; border-color: var(--water); }
+.vi-link button { height: 46px; padding: 0 20px; font-size: 16px; border-radius: 12px; }
+#viLinkNote { margin: 0; min-height: 0; }
+#viLinkNote:empty { display: none; }
+.vi-alt { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.vi-alt .fine { margin: 0 4px 0 0; }
+.vi-how { margin: 6px 0 0; max-width: 720px; color: var(--ink-dim); font-size: 14.5px; }
+.vi-work { display: flex; flex-direction: column; gap: 14px; }
+/* low enough that the status, the keys koimidi sees and the buttons fit below it on a laptop screen */
+.vi-player { position: relative; width: min(100%, max(480px, calc((100dvh - 300px) * 16 / 9))); align-self: center; aspect-ratio: 16 / 9; background: #000; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+.vi-player > div, .vi-player iframe, .vi-player video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.vi-player video { object-fit: contain; }
+.vi-panel { display: flex; flex-direction: column; gap: 12px; }
+.vi-status { margin: 0; font-size: 15px; min-height: 22px; }
+.vi-status.ok { color: var(--ok); }
+.vi-status.warn { color: var(--warn); }
+.vi-status a { margin-left: 4px; }
+.vi-progress { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.vi-progress div { height: 100%; width: 0; background: var(--water); transition: width .15s linear; }
+.vi-seen, .vi-roll { position: static; inset: auto; touch-action: auto; }
+.vi-seen { width: 100%; height: auto; display: block; border-radius: 8px; border: 1px solid var(--line); }
+.vi-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
+.vi-speed { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-dim); }
+.vi-name { display: flex; flex-direction: column; gap: 6px; max-width: 720px; font-size: 13px; color: var(--ink-dim); }
+.vi-summary { margin: 0; color: var(--ink-dim); font-size: 14.5px; }
+.vi-roll { width: 100%; height: 160px; display: block; background: var(--pool); border: 1px solid var(--line); border-radius: 10px; }
+.vi-rows { display: flex; flex-direction: column; gap: 8px; }
+.vi-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14px; }
+.vi-row > span:first-child { min-width: 132px; color: var(--ink-dim); }
+.vi-row .fine { margin: 0; }
+.vi-oct { font-family: var(--display); font-size: 13px; min-width: 72px; text-align: center; }
 
 /* ---------- toast & drop ---------- */
 .toast {

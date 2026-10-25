@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.5.0 — 2026-10-25
+
+Pieces from videos.
+
+- **From a video** on the home screen: a YouTube link (played in YouTube's own player inside koimidi), a video in another browser tab, or a video file (also by dropping it on the page)
+- The keyboard is found in the frame by its white keys and the pattern of black keys in twos and threes: full keyboards and close-ups cut off at the edges, black keys midway between white ones or off-centre as on a real piano, letters and logos on the keys; the octave comes from the key count (88, 76, 61, 49 keys) or, for a close-up, from middle C nearest the centre, with an octave switch on the result
+- Long intros and outros: the keyboard is looked for in the first seconds and then at a few places further on, and the whole video is recorded
+- Every key is followed frame by frame, white keys in two places (some videos light only the part between the black keys), against each key's usual colour over the whole video; fades, cuts and title cards are skipped, and keys held across a stall in the video are let go
+- Hands by the hue of the lit keys, so a lighter shade for white keys and a darker one for black keys of the same hand stay one hand
+- Repeated notes of the same key: split by the dark moment between them when the video shows one; otherwise by the gap between the falling bars just above the keys (bars told from a plain or picture background by being bright and vivid, looked at across their whole width so the note names printed on them are not taken for gaps)
+- Tempo by autocorrelation and the beats by dynamic programming (Ellis 2007), notes on a grid of quarters or thirds of a beat; 4/4, 3/4, or 12/8 and 9/8 when the beats split in three; the first downbeat from the rhythm, bass notes and long notes; half-speed playback for fast pieces, with the real tempo kept
+- Result screen: title, notes, hands, bars and tempo, a piano roll of the first bars, time signature and bar lines adjustable, a preview with the app's sound; the piece is stored as a MIDI file in *Your files* with the video's link
+- YouTube buffering and pauses do not stretch the notes; a file pauses while its tab is hidden; tab capture works in the background
+- No lit keyboard: recognise by ear instead with Spotify's Basic Pitch (TensorFlow.js, about 1 MB, loaded only then and kept for offline use once fetched), marked as a draft
+- Tests on synthetic videos drawn from the library pieces in three styles (Synthesia; a close-up with real piano proportions, striped keys and a logo; keys lit only at the top, letters on the keys and a picture behind the bars), and through H.264 at 720p and 360p when ffmpeg is installed
+
 ## v0.4.0 — 2026-10-25
 
 Sound.

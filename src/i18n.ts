@@ -204,6 +204,72 @@ export const dict = {
     'sound.added': 'Added "{name}"',
     'size.mb': '{n} MB',
     'size.kb': '{n} KB',
+    'video.button': 'From a video',
+    'video.title': 'Piece from a video',
+    'video.sub': 'Falling notes over a lit keyboard, Synthesia style',
+    'video.h.source': 'Learn any piece from a piano tutorial video',
+    'video.link.ph': 'Paste a YouTube link',
+    'video.link.open': 'Open',
+    'video.link.bad': 'This does not look like a YouTube link.',
+    'video.or': 'or',
+    'video.tab': 'Video in another tab',
+    'video.file': 'Video file',
+    'video.how': 'Works with videos where the keys light up as the falling notes reach them (Synthesia and similar). koimidi plays the video, watches the keyboard and writes down every note, its rhythm and the hand, by colour.',
+    'video.privacy': 'The video plays as on YouTube; recognition runs on this computer. Nothing is downloaded or uploaded.',
+    'video.loading': 'Opening the video…',
+    'video.ready': 'Press Recognise: the video plays from the start while koimidi notes down every key. The browser will ask you to let koimidi see this tab: that is how it looks at the keyboard.',
+    'video.readyFile': 'Press Recognise: the video plays from the start while koimidi notes down every key.',
+    'video.start': 'Recognise',
+    'video.record': 'Start recording',
+    'video.stop': 'Done',
+    'video.speed': 'Speed',
+    'video.speed.1': 'normal',
+    'video.speed.05': 'half: more accurate for fast pieces',
+    'video.asking': 'Allow koimidi to see this tab…',
+    'video.finding': 'Looking for the keyboard…',
+    'video.buffering': 'Keyboard found. Loading the video ahead…',
+    'video.recording': 'Recognising · {notes} · {time}',
+    'video.tab.waiting': 'Show the part of the video where the keyboard is visible in the shared tab.',
+    'video.tab.ready': 'Keyboard found: {keys}. Rewind the video to the start, press Start recording, then play it in that tab.',
+    'video.noKeyboard': 'No lit keyboard in this video. koimidi reads videos where falling notes light up the keys (Synthesia style).',
+    'video.fewNotes': 'Hardly any notes came through. Check that the keys in the video light up in colour, and try again.',
+    'video.denied': 'Without permission to see the tab koimidi cannot watch the keyboard. Press Recognise to try again.',
+    'video.noCapture': 'This browser cannot share a tab. Use Chrome, Edge or another Chromium browser on a computer.',
+    'video.yt.unreachable': 'YouTube did not open. If it works for you only through a VPN, turn the VPN on and try again; or use a video in another tab, or a file.',
+    'video.yt.embed': 'The author does not allow this video to play outside YouTube. Open it on YouTube in another tab and choose "Video in another tab".',
+    'video.yt.openThere': 'Open on YouTube',
+    'video.yt.missing': 'This video is unavailable.',
+    'video.yt.error': 'The video could not play.',
+    'video.file.bad': 'This browser cannot play this video file.',
+    'video.another': 'Another video',
+    'video.result': 'Recognised',
+    'video.name': 'Title',
+    'video.untitled': 'Piece from a video',
+    'video.summary': '{notes} · {hands} · {bars} · tempo {bpm}',
+    'video.hands.color': 'two hands, told apart by colour',
+    'video.hands.none': 'one colour: hands split by pitch',
+    'video.meter': 'Time signature',
+    'video.meter.auto': 'auto: {sig}',
+    'video.shift': 'Bar lines',
+    'video.shift.earlier': '← one beat earlier',
+    'video.shift.later': 'one beat later →',
+    'video.octave': 'Octave',
+    'video.octave.note': 'The keyboard is not all visible in the video: listen, and shift the octave if it sounds wrong.',
+    'video.listen': 'Listen',
+    'video.listenStop': 'Stop',
+    'video.open': 'Open in the trainer',
+    'video.again': 'Recognise again',
+    'video.notes': '{n} notes',
+    'video.notes.one': '{n} note',
+    'video.audio.button': 'Recognise by ear (draft)',
+    'video.audio.hint': 'koimidi can listen to it instead: it hears the notes, but may get some wrong and cannot tell the hands apart.',
+    'video.audio.recording': 'Listening · {time}. Let the video play to the end, or press Done.',
+    'video.audio.decoding': 'Reading the sound…',
+    'video.audio.thinking': 'Recognising the notes by ear… {p}%',
+    'video.audio.noTrack': 'No sound came with the tab. When you choose the tab, leave "Also share tab audio" on.',
+    'video.audio.failed': 'Could not recognise the sound: {reason}',
+    'video.hands.audio': 'by ear: hands split by pitch',
+    'video.draft': 'Recognised by ear, so this is a draft: some notes may be wrong. Listen and compare with the video.',
   },
   ru: {
     'app.tagline': 'Бесплатный тренажёр для MIDI-клавиатуры',
@@ -409,6 +475,73 @@ export const dict = {
     'sound.added': 'Добавлен «{name}»',
     'size.mb': '{n} МБ',
     'size.kb': '{n} КБ',
+    'video.button': 'Из видео',
+    'video.title': 'Пьеса из видео',
+    'video.sub': 'Падающие ноты над подсвеченной клавиатурой, как в Synthesia',
+    'video.h.source': 'Выучите любую мелодию по видеоуроку',
+    'video.link.ph': 'Вставьте ссылку на YouTube',
+    'video.link.open': 'Открыть',
+    'video.link.bad': 'Это не похоже на ссылку на YouTube.',
+    'video.or': 'или',
+    'video.tab': 'Видео из другой вкладки',
+    'video.file': 'Видеофайл',
+    'video.how': 'Подходят ролики, где клавиши подсвечиваются, когда до них долетает нота (Synthesia и похожие). koimidi проигрывает видео, смотрит на клавиатуру и записывает каждую ноту, ритм и руку — по цвету подсветки.',
+    'video.privacy': 'Видео играет как на YouTube, а распознавание идёт на этом компьютере. Ничего не скачивается и не загружается.',
+    'video.loading': 'Открываю видео…',
+    'video.ready': 'Нажмите «Распознать»: видео проиграется с начала, а koimidi запишет каждую клавишу. Браузер спросит, можно ли koimidi видеть эту вкладку: так он смотрит на клавиатуру.',
+    'video.readyFile': 'Нажмите «Распознать»: видео проиграется с начала, а koimidi запишет каждую клавишу.',
+    'video.start': 'Распознать',
+    'video.record': 'Записывать',
+    'video.stop': 'Готово',
+    'video.speed': 'Скорость',
+    'video.speed.1': 'обычная',
+    'video.speed.05': 'вдвое медленнее: точнее для быстрых пьес',
+    'video.asking': 'Разрешите koimidi видеть эту вкладку…',
+    'video.finding': 'Ищу клавиатуру…',
+    'video.buffering': 'Клавиатура найдена. Загружаю видео наперёд…',
+    'video.recording': 'Распознаю · {notes} · {time}',
+    'video.tab.waiting': 'Откройте в показанной вкладке момент, где видна клавиатура.',
+    'video.tab.ready': 'Клавиатура найдена: {keys}. Перемотайте видео в начало, нажмите «Записывать» и запустите его в той вкладке.',
+    'video.noKeyboard': 'В этом видео не видно подсвеченной клавиатуры. koimidi читает ролики, где падающие ноты подсвечивают клавиши (как в Synthesia).',
+    'video.fewNotes': 'Почти не нашлось нот. Проверьте, что клавиши в видео подсвечиваются цветом, и попробуйте ещё раз.',
+    'video.denied': 'Без разрешения видеть вкладку koimidi не может смотреть на клавиатуру. Нажмите «Распознать», чтобы попробовать снова.',
+    'video.noCapture': 'Этот браузер не умеет показывать вкладку. Откройте koimidi в Chrome, Edge или другом браузере на Chromium на компьютере.',
+    'video.yt.unreachable': 'YouTube не открылся. Если он работает у вас только через VPN, включите VPN и попробуйте ещё раз. Или возьмите видео из другой вкладки или файл.',
+    'video.yt.embed': 'Автор запретил показывать это видео вне YouTube. Откройте его на YouTube в соседней вкладке и выберите «Видео из другой вкладки».',
+    'video.yt.openThere': 'Открыть на YouTube',
+    'video.yt.missing': 'Это видео недоступно.',
+    'video.yt.error': 'Видео не проигрывается.',
+    'video.file.bad': 'Этот браузер не может проиграть этот видеофайл.',
+    'video.another': 'Другое видео',
+    'video.result': 'Распознано',
+    'video.name': 'Название',
+    'video.untitled': 'Пьеса из видео',
+    'video.summary': '{notes} · {hands} · {bars} · темп {bpm}',
+    'video.hands.color': 'две руки, по цвету',
+    'video.hands.none': 'один цвет: руки разделены по высоте',
+    'video.meter': 'Размер',
+    'video.meter.auto': 'авто: {sig}',
+    'video.shift': 'Тактовые черты',
+    'video.shift.earlier': '← на долю раньше',
+    'video.shift.later': 'на долю позже →',
+    'video.octave': 'Октава',
+    'video.octave.note': 'Клавиатура видна в видео не целиком: послушайте и сдвиньте октаву, если звучит не там.',
+    'video.listen': 'Послушать',
+    'video.listenStop': 'Стоп',
+    'video.open': 'Открыть в тренажёре',
+    'video.again': 'Распознать заново',
+    'video.notes': '{n} нот',
+    'video.notes.one': '{n} нота',
+    'video.notes.few': '{n} ноты',
+    'video.audio.button': 'Распознать по звуку (черновик)',
+    'video.audio.hint': 'koimidi может послушать его: он услышит ноты, но часть может спутать и не отличит руки.',
+    'video.audio.recording': 'Слушаю · {time}. Дайте видео доиграть или нажмите «Готово».',
+    'video.audio.decoding': 'Читаю звук…',
+    'video.audio.thinking': 'Распознаю ноты на слух… {p}%',
+    'video.audio.noTrack': 'Вкладка пришла без звука. При выборе вкладки оставьте включённым «Также поделиться звуком вкладки».',
+    'video.audio.failed': 'Не удалось распознать звук: {reason}',
+    'video.hands.audio': 'на слух: руки разделены по высоте',
+    'video.draft': 'Распознано на слух, это черновик: часть нот может быть неверной. Послушайте и сравните с видео.',
   },
 } as const;
 
@@ -466,6 +599,9 @@ export function applyI18n(root: ParentNode = document): void {
   root.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
     el.textContent = t(el.dataset.i18n as Key);
   });
+  root.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => {
+    el.placeholder = t(el.dataset.i18nPlaceholder as Key);
+  });
   root.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => {
     el.title = t(el.dataset.i18nTitle as Key);
     el.setAttribute('aria-label', el.title);
@@ -473,7 +609,7 @@ export function applyI18n(root: ParentNode = document): void {
 }
 
 /** A count with plural forms: `base` for many, `base.one`, and in Russian `base.few`. */
-function plural(base: 'piece.bars' | 'keys', n: number): string {
+function plural(base: 'piece.bars' | 'keys' | 'video.notes', n: number): string {
   const table = dict[current] as Record<string, string>;
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -489,6 +625,11 @@ function plural(base: 'piece.bars' | 'keys', n: number): string {
 /** "{n} bars" with Russian plural forms. */
 export function barsLabel(n: number): string {
   return plural('piece.bars', n);
+}
+
+/** "{n} notes" with Russian plural forms. */
+export function notesLabel(n: number): string {
+  return plural('video.notes', n);
 }
 
 /** "{n} keys" with Russian plural forms. */

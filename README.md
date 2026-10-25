@@ -25,6 +25,7 @@ Learning a melody without reading sheet music means you want three things at onc
 - **Pieces from videos.** Paste a YouTube link to a piano tutorial, pick a video in another browser tab, or open a video file. By default koimidi listens: it writes down the notes it hears, with the tempo and the bars (a draft: some notes may be wrong, and the hands are split by pitch). For a Synthesia-style video (falling notes that light up the keys) switch to *by the lit keys*: koimidi finds the keyboard in the picture, notes down every key that lights up and tells the hands apart by colour, which is exact where it works. Either way the piece lands in *Your files* with fingering, like any MIDI file. Check the bars on a small piano roll, change the time signature or move the bar lines by a beat, listen, then practise.
 - **Automatic fingering** (right and left hand) for files that carry none, using a Parncutt-style ergonomic cost model and dynamic programming. Fingering from MusicXML `<fingering>` is kept.
 - **Your own fingering.** Click a bar and pick a finger (or press `1`–`5`). The choice is kept in this browser for that piece, the automatic fingering rearranges the notes around it, and a small dot marks the fingers you chose.
+- **Fix the notes on the waterfall.** A piece recognised from a video is a draft, and a file can have a wrong note too. Click a bar to give the note to the other hand or delete it, or press ✎ **Edit the notes**: the bars stand still over a beat grid, a click in an empty lane puts a note there, a bar drags to another key or time and its top edge to another length, a key played on your keyboard moves the chosen note to that key, and the arrow keys nudge it. Every change can be undone (`Ctrl`/`⌘` `Z`) and is kept in this browser for that piece, like your fingers; **Restore the original notes** in Settings drops them all.
 - **Export MusicXML with fingering**, yours included, to print the piece or open it in MuseScore and other notation programs.
 - **Count-in and metronome.** *In tempo* starts after one bar of clicks; the metronome clicks every beat in *In tempo* and *Listen*.
 - **Keyboard profile.** Tell koimidi how many keys your controller has, or let it guess from the device name (Komplete Kontrol M32 → 32 keys). Controllers up to 49 keys appear on screen key for key, at the octave that suits the piece; pieces that need more keys are flagged in the library and while you practise.
@@ -53,7 +54,7 @@ The site must be served over `https://` or opened from `localhost` / a local fil
 2. Pick a piece from the library or open your own `.mid` / `.musicxml` / `.mxl`.
 3. Press the highlighted key to start. In *Learn* mode nothing moves until you play the right note.
 4. Narrow the loop to a few bars (drag across the strip of bars above the stage, click a section's name, type them in the **Bars** fields, or `[` / `]` while playing), slow the tempo with − and +, repeat, widen. In a two-hand piece, practise one hand with **The trainer plays the other hand** on, then both.
-5. A finger feels wrong? Click its bar and choose another one; the rest of the fingering adapts.
+5. A finger feels wrong? Click its bar and choose another one; the rest of the fingering adapts. A note is wrong (likely in a piece recognised from a video)? Click its bar to delete it or give it to the other hand, or press ✎ **Edit the notes** to add, move and lengthen notes; `Space` plays on from there.
 6. Switch to *In tempo* when it feels easy, with the metronome if it helps. Record a take with ● to hear yourself.
 7. Open **Progress** (the chart button) to see which bars still go wrong, and loop them.
 
@@ -69,11 +70,11 @@ A piece recognised from a YouTube link brings the tutorial with it: the **Video*
 
 What works: Synthesia-style renderers of most kinds (keys lit whole or in part, letters on the keys and on the bars, a drawn keyboard above a filmed one, fades and title cards, slow tutorials). What does not: a filmed piano whose keys do not light up (koimidi says so and offers to listen instead), and glow-only visualisers where the keys stay dark.
 
-Shortcuts: `Space` start/pause · `Enter` restart · `[` `]` loop start/end at the current bar · `Z` `X` shift the computer-keyboard octave · `1`–`5` finger for the selected bar · `Esc` back to the library.
+Shortcuts: `Space` start/pause · `Enter` restart · `[` `]` loop start/end at the current bar · `Z` `X` shift the computer-keyboard octave · `1`–`5` finger for the selected bar · `Delete` delete the selected note · arrows move it while editing the notes · `Ctrl`/`⌘` `Z` undo · `Esc` back to the library.
 
 ## Privacy
 
-There is no account, no analytics and no network requests after the page loads, apart from the browser checking for a new version of the app, the grand piano sound and the listening model (about 1 MB, for recognising a video by ear), which are downloaded from this same site the first time you use them, and YouTube's own player when you open a YouTube link (it plays as on YouTube, under YouTube's terms). While recognising a video koimidi looks at the shared tab frame by frame in memory; no frame and no sound is stored or sent anywhere, and sharing stops when the recognition does. Imported files, SoundFont packs, the fingers you chose, your progress and your settings are stored only in your browser (localStorage, IndexedDB and Cache Storage); clearing site data removes them. Recordings stay in memory until you save them. Nothing is uploaded anywhere.
+There is no account, no analytics and no network requests after the page loads, apart from the browser checking for a new version of the app, the grand piano sound and the listening model (about 1 MB, for recognising a video by ear), which are downloaded from this same site the first time you use them, and YouTube's own player when you open a YouTube link (it plays as on YouTube, under YouTube's terms). While recognising a video koimidi looks at the shared tab frame by frame in memory; no frame and no sound is stored or sent anywhere, and sharing stops when the recognition does. Imported files, SoundFont packs, the fingers and notes you changed, your progress and your settings are stored only in your browser (localStorage, IndexedDB and Cache Storage); clearing site data removes them. Recordings stay in memory until you save them. Nothing is uploaded anywhere.
 
 ## Development
 
@@ -90,15 +91,15 @@ Plain TypeScript + Vite, no UI framework. Layout of `src/`:
 
 | Folder | What lives there |
 | --- | --- |
-| `score/` | the score model, MIDI and MusicXML importers, MusicXML export, the compact library notation, automatic fingering and the player's finger edits |
+| `score/` | the score model, MIDI and MusicXML importers, MusicXML export, the compact library notation, automatic fingering and the player's edits of fingers and notes |
 | `practice/` | the practice engine (modes, waiting, hit windows, loop range, octave tolerance, count-in, metronome, the trainer's hand, pass statistics), progress, the recorder, and the video kept in step with the bars |
 | `render/` | the canvas renderer (falling bars, keyboard), in the colours of the current look |
 | `audio/` | the WebAudio synth and metronome, sampled instruments through SpessaSynth, sound banks (the grand piano and the player's packs) |
 | `input/` | Web MIDI and computer-keyboard input, keyboard profiles |
-| `storage/` | settings in localStorage; files, finger edits and progress in IndexedDB |
+| `storage/` | settings in localStorage; files, the player's edits and progress in IndexedDB |
 | `video/` | pieces from videos: finding the keyboard in a frame, following the keys, beats, bars and hands, the YouTube player, the piece's place in the video, tab and file capture, listening by ear with Basic Pitch, and synthetic videos for the tests |
 | `library/` | built-in pieces |
-| `ui/` | home, practice and "from a video" screens, the strip of bars, the hands picture, the video panel, the progress sheet |
+| `ui/` | home, practice and "from a video" screens, the strip of bars, editing notes on the stage, the hands picture, the video panel, the progress sheet |
 | `theme.ts`, `styles.css`, `fonts.css` | the three looks as colour tokens, the stylesheet, and the bundled fonts (Piazzolla, JetBrains Mono, Golos Text, Unbounded) |
 | `sw.js`, `pwa.ts` | the service worker (its file list is filled in by the build, see `vite.config.ts`) and its registration, update prompt and Install button |
 

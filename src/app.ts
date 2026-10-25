@@ -5,9 +5,8 @@ import { applyI18n, detectLang, keysLabel, setLang, t, type NameStyle } from './
 import { startMidi, type MidiStatus } from './input/midi';
 import { guessSize, presetRange, type KeyboardSize, type KeyRange } from './input/profile';
 import { Synth } from './audio/synth';
-import { applyEdits } from './score/edits';
 import type { Score } from './score/model';
-import { getFile, getFingerings, requestPersistence, touchFile, type FileKind, type StoredFile } from './storage/files';
+import { getFile, getPieceEdits, requestPersistence, touchFile, type FileKind, type StoredFile } from './storage/files';
 import { loadPieceSettings, loadSettings, saveSettings, type Lang, type Settings } from './storage/settings';
 import { applyTheme, type ThemeChoice } from './theme';
 import { $, el, safeFileName, toast } from './ui/dom';
@@ -257,10 +256,9 @@ export class App {
     }
   }
 
-  /** Open the practice screen with the player's finger edits for this piece applied. */
+  /** Open the practice screen with the player's edits of this piece (fingers and notes). */
   private async show(score: Score, info: PieceInfo): Promise<void> {
-    const edits = await getFingerings(info.id);
-    applyEdits(score, edits);
+    const edits = await getPieceEdits(info.id);
     this.current = info;
     this.settings.lastPieceId = info.id;
     this.save();

@@ -343,3 +343,37 @@ describe('engine: listen mode', () => {
     vi.useRealTimers();
   });
 });
+
+describe('engine: edited notes', () => {
+  it('reload regroups the notes and keeps the place', () => {
+    const { e, score } = make();
+    e.setPlaying(true);
+    for (const p of [60, 62]) {
+      for (let i = 0; i < 100; i++) e.step(1 / 60);
+      e.press(p);
+    }
+    for (let i = 0; i < 100; i++) e.step(1 / 60);
+    e.setPlaying(false);
+    const pos = e.pos;
+    expect(pos).toBe(2);
+    // the third note (E4) is taken out, a G4 put in its place
+    score.notes = score.notes.filter((n) => n.pitch !== 64);
+    score.notes.push({ pitch: 67, t: 2, dur: 1, hand: 'R', measure: 1 });
+    score.notes.sort((a, b) => a.t - b.t || a.pitch - b.pitch);
+    e.reload();
+    expect(e.pos).toBe(pos);
+    expect(e.target?.notes.map((n) => n.pitch)).toEqual([67]);
+    expect(e.noteState(score.notes[0])).toBe(1);
+  });
+
+  it('seek carries on inside the range and restarts outside it', () => {
+    const { e } = make();
+    e.setRangeMeasures(2, 3);
+    e.seek(5);
+    expect(e.pos).toBe(5);
+    expect(e.target?.t).toBe(5);
+    e.seek(1);
+    expect(e.pos).toBe(4 - e.leadBeats());
+    expect(e.target?.t).toBe(4);
+  });
+});

@@ -1,8 +1,9 @@
 /**
  * Practice screen: the rail on the left (piece, mode, transport, tempo, hands,
  * the next notes on a picture of the hands), the strip of bars above the
- * stage (loop range), the stage itself, hints, finger editing, recording, and
- * the settings and progress sheets.
+ * stage (loop range), the stage itself, hints, the note picker (finger, hand,
+ * delete), editing the notes on the stage, recording, and the settings and
+ * progress sheets.
  */
 import type { App, PieceInfo } from '../app';
 import { fingerName, getLang, keysLabel, noteName, t, type Key } from '../i18n';
@@ -13,29 +14,38 @@ import { Engine, type HandSel, type Mode, type PassStats, type Summary } from '.
 import { addPass, emptyProgress, type PassResult, type PieceProgress } from '../practice/progress';
 import { Recorder, takeToMidi, type Take } from '../practice/recorder';
 import { Stage } from '../render/stage';
-import { applyEdits, clearEdits, setFinger, suggestedSource, type FingerEdits } from '../score/edits';
-import { bpmAt, measureAt, type Finger, type Score, type ScoreNote } from '../score/model';
+import { suggestedSource } from '../score/edits';
+import { bpmAt, measureAt, type Finger, type Hand, type Score, type ScoreNote } from '../score/model';
+import { emptyNoteEdits, hasNoteEdits, PieceEditor, roomUntil, type PieceEdits } from '../score/note-edits';
 import type { MidiSplit } from '../score/midi';
 import { toMusicXML } from '../score/musicxml-export';
 import { scoreFromStored } from '../importer';
-import { getFile, putFingerings } from '../storage/files';
+import { getFile, putPieceEdits } from '../storage/files';
 import { deleteProgress, getProgress, putProgress } from '../storage/progress';
 import { clearPieceSettings, loadPieceSettings, savePieceSettings } from '../storage/settings';
 import { fingerColor, onThemeChange, THEMES, type ThemeChoice } from '../theme';
 import { $, download, el, formatDuration, paintRange, safeFileName, toast } from './dom';
 import { HandMap } from './hands';
+import { NoteEditing } from './note-editing';
 import { percent, ProgressPanel } from './progress-panel';
 import { Timeline } from './timeline';
 import { VideoPanel } from './video-panel';
 
 const DIGITS: Record<string, Finger> = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Digit5: 5, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4, Numpad5: 5 };
+/** arrow keys while editing: keys up or down, steps later or earlier */
+const ARROWS: Record<string, [keys: number, steps: number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
 
 export class PracticeView {
   active = false;
   engine: Engine | null = null;
   score: Score | null = null;
   private info: PieceInfo | null = null;
-  private edits: FingerEdits = {};
+  /** the player's edits of this piece (fingers, notes) and their undo */
+  private editor: PieceEditor | null = null;
+  /** edits are stored one after another, so an older copy never lands last */
+  private saving: Promise<void> = Promise.resolve();
+  private editing: NoteEditing;
   private stage: Stage;
   private kb: ComputerKeyboard;
   private dirty = true;
@@ -62,9 +72,24 @@ export class PracticeView {
   private video: VideoPanel;
   /** show which computer keys play which notes (no MIDI keyboard) */
   private letters = false;
+  /** the hands the picture of the hands was built for */
+  private handsKey = '';
 
   constructor(private app: App) {
     this.stage = new Stage($<HTMLCanvasElement>('stage'));
+    this.editing = new NoteEditing(
+      {
+        piece: () => (this.score && this.engine && this.editor ? { score: this.score, engine: this.engine, editor: this.editor } : null),
+        edited: (n) => this.noteEdited(n),
+        pick: (n) => this.openPicker(n),
+        picking: () => !!this.picked,
+        unpick: () => this.closePicker(),
+        audition: (p, beats) => this.audition(p, beats),
+        redraw: () => (this.dirty = true),
+      },
+      this.stage,
+      $<HTMLCanvasElement>('stage'),
+    );
     this.timeline = new Timeline($('tlTrack'), (from, to) => this.setRange(from, to));
     this.hands = new HandMap($('handmap'));
     this.video = new VideoPanel();
@@ -83,7 +108,7 @@ export class PracticeView {
     this.kb = new ComputerKeyboard({
       noteOn: (p, v) => this.noteOn(p, v),
       noteOff: (p) => this.noteOff(p),
-      command: (code) => this.command(code),
+      command: (code, e) => this.command(code, e),
     });
     this.wire();
     new ResizeObserver(() => this.stage.resize()).observe($('stage').parentElement!);
@@ -92,11 +117,13 @@ export class PracticeView {
 
   /* ---------- open / close ---------- */
 
-  open(score: Score, info: PieceInfo, edits: FingerEdits): void {
+  /** Open a piece as the file gives it; the player's edits are applied here. */
+  open(score: Score, info: PieceInfo, edits: PieceEdits): void {
     this.engine?.dispose(); // reports the previous piece's last pass while it is still current
+    this.leaveEditing();
     this.score = score;
     this.info = info;
-    this.edits = edits;
+    this.editor = new PieceEditor(score, edits);
     this.lastPass = null;
     if (this.progress?.id !== info.id) {
       this.progress = null;
@@ -139,7 +166,7 @@ export class PracticeView {
     this.kb.fitTo(e.activeNotes.map((n) => n.pitch));
     this.timeline.build(score);
     this.timeline.setHeat(this.progress?.id === info.id ? this.progress : null);
-    this.hands.build(score.hands);
+    this.buildHands(true);
     this.video.open(info.video ?? null, score, s.video);
     this.active = true;
     this.closeSettings();
@@ -149,11 +176,13 @@ export class PracticeView {
     this.syncControls();
     this.renderTake();
     this.renderTitle();
+    this.renderEditBar();
     this.warnFit();
     this.dirty = true;
   }
 
   close(): void {
+    this.leaveEditing();
     if (this.recorder.recording) this.stopRecording();
     this.stopTakePlayback();
     this.active = false;
@@ -185,10 +214,11 @@ export class PracticeView {
     if (this.score) {
       this.timeline.build(this.score);
       this.timeline.setHeat(this.progress);
-      this.hands.build(this.score.hands);
+      this.buildHands(true);
     }
     this.renderTake();
     this.renderThemes();
+    this.renderEditTitles();
     this.video.refreshTexts();
     this.refreshPanel();
     this.dirty = true;
@@ -252,6 +282,15 @@ export class PracticeView {
   noteOn(p: number, vel: number): void {
     if (!this.active || !this.engine) return;
     this.recorder.noteOn(p, vel);
+    if (this.editing.on) {
+      // nothing is judged while editing; a key played with a note picked moves the note there
+      if (this.app.settings.sound) {
+        this.app.synth.unlock();
+        this.app.synth.noteOn(p, vel);
+      }
+      if (this.picked) this.retune(this.picked, p);
+      return;
+    }
     if (this.app.settings.sound && this.engine.mode !== 'listen') {
       this.app.synth.unlock();
       this.app.synth.noteOn(p, vel);
@@ -269,18 +308,37 @@ export class PracticeView {
     this.recorder.pedal(on);
   }
 
-  private command(code: string): boolean {
+  private command(code: string, ev: KeyboardEvent): boolean {
     if (!this.active || !this.engine) return false;
     const e = this.engine;
-    if (this.picked) {
-      // Enter / Space on a focused finger button press that button
+    if (ev.metaKey || ev.ctrlKey || ev.altKey) {
+      // only undo and redo; the rest belongs to the browser (⌘[ is Back)
+      if (ev.altKey || !(code === 'KeyZ' || (code === 'KeyY' && ev.ctrlKey))) return false;
+      if (code === 'KeyY' || ev.shiftKey) this.redo();
+      else this.undo();
+      return true;
+    }
+    const sel = this.picked ?? (this.editing.on ? this.stage.selected : null);
+    if (sel) {
+      // Enter / Space on a focused button in the picker press that button
       if ((code === 'Enter' || code === 'Space') && $('picker').contains(document.activeElement)) return false;
       if (code in DIGITS) {
-        this.chooseFinger(DIGITS[code]);
+        this.chooseFinger(DIGITS[code], sel);
         return true;
       }
-      if ((code === 'Backspace' || code === 'Delete' || code === 'Digit0') && this.picked.fingerSource === 'user') {
-        this.chooseFinger(undefined);
+      if (code === 'Digit0' || code === 'Numpad0') {
+        if (sel.fingerSource === 'user') this.chooseFinger(undefined, sel);
+        return true;
+      }
+      if (code === 'Backspace' || code === 'Delete') {
+        this.deleteNote(sel);
+        return true;
+      }
+      if (this.editing.on && code in ARROWS) {
+        const [keys, steps] = ARROWS[code];
+        const beats = ev.shiftKey ? 4 / this.score!.timeSig[1] : this.stage.editGrid();
+        const m = this.editing.nudge(sel, ev.shiftKey ? keys * 12 : keys, steps * beats);
+        if (m && this.picked) this.openPicker(m);
         return true;
       }
     }
@@ -289,12 +347,17 @@ export class PracticeView {
         this.togglePlay();
         return true;
       case 'Enter':
+        if (this.editing.on) this.setEditing(false);
         e.restart();
         return true;
       case 'Escape':
         if (this.picked) this.closePicker();
         else if (!$('settings').hidden) this.closeSettings();
         else if (this.panel.open) this.panel.close();
+        else if (this.editing.on && this.stage.selected) {
+          this.stage.selected = null;
+          this.dirty = true;
+        } else if (this.editing.on) this.setEditing(false);
         else this.app.showHome();
         return true;
       case 'BracketLeft': {
@@ -319,13 +382,18 @@ export class PracticeView {
     $('back').addEventListener('click', () => this.app.showHome());
     $('play').addEventListener('click', () => this.togglePlay());
     $('restart').addEventListener('click', () => this.engine?.restart());
+    $('edit').addEventListener('click', () => this.setEditing(!this.editing.on));
+    $('editDone').addEventListener('click', () => this.setEditing(false));
+    $('editUndo').addEventListener('click', () => this.undo());
+    $('editRedo').addEventListener('click', () => this.redo());
+    this.renderEditTitles();
     $('rec').addEventListener('click', () => this.toggleRecording());
     document.querySelectorAll<HTMLInputElement>('input[name=mode]').forEach((r) =>
       r.addEventListener('change', () => {
         if (!r.checked) return;
         s.mode = r.value as Mode;
         this.app.save();
-        this.engine?.setMode(s.mode);
+        this.keepPlace(() => this.engine?.setMode(s.mode));
         this.hideHint();
         this.syncControls();
         this.refreshPanel();
@@ -341,7 +409,8 @@ export class PracticeView {
     document.querySelectorAll<HTMLInputElement>('input[name=hand]').forEach((r) =>
       r.addEventListener('change', () => {
         if (!r.checked || !this.engine) return;
-        this.engine.setHand(r.value as HandSel);
+        const e = this.engine;
+        this.keepPlace(() => e.setHand(r.value as HandSel));
         this.stage.fitRange();
         this.kb.fitTo(this.engine.activeNotes.map((n) => n.pitch));
         this.savePiece();
@@ -395,10 +464,13 @@ export class PracticeView {
       this.syncControls();
     });
     const canvas = $<HTMLCanvasElement>('stage');
-    canvas.addEventListener('pointerdown', (e) => {
+    const local = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
-      const x = e.clientX - r.left;
-      const y = e.clientY - r.top;
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    canvas.addEventListener('pointerdown', (e) => {
+      const { x, y } = local(e);
+      if (this.editing.down(e, x, y)) return;
       const p = this.stage.hitTest(x, y);
       if (p === null) {
         // above the keyboard: a bar opens the finger picker
@@ -417,8 +489,20 @@ export class PracticeView {
       this.pointers.delete(e.pointerId);
       this.noteOff(p);
     };
-    canvas.addEventListener('pointerup', up);
-    canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('pointermove', (e) => {
+      const { x, y } = local(e);
+      this.editing.move(e, x, y);
+    });
+    canvas.addEventListener('pointerup', (e) => {
+      const { x, y } = local(e);
+      if (!this.editing.up(e, x, y)) up(e);
+    });
+    canvas.addEventListener('pointercancel', (e) => {
+      this.editing.cancel();
+      up(e);
+    });
+    canvas.addEventListener('pointerleave', () => this.editing.leave());
+    canvas.addEventListener('wheel', (e) => this.editing.wheel(e), { passive: false });
 
     // finger picker
     const picker = $('picker');
@@ -431,6 +515,10 @@ export class PracticeView {
       fingers.append(b);
     }
     $('pickerReset').addEventListener('click', () => this.chooseFinger(undefined));
+    $('pickerDelete').addEventListener('click', () => this.picked && this.deleteNote(this.picked));
+    document.querySelectorAll<HTMLInputElement>('input[name=pickHand]').forEach((r) =>
+      r.addEventListener('change', () => r.checked && this.picked && this.setNoteHand(this.picked, r.value as Hand)),
+    );
     addEventListener('pointerdown', (e) => {
       if (!this.picked) return;
       const target = e.target as Node;
@@ -478,12 +566,22 @@ export class PracticeView {
     });
     $('exportXml').addEventListener('click', () => this.exportMusicXML());
     $('resetFingers').addEventListener('click', () => {
-      const n = Object.keys(this.edits).length;
-      if (!this.score || !this.info || !n || !confirm(t('settings.resetFingersConfirm', { n }))) return;
-      clearEdits(this.score, this.edits);
-      void putFingerings(this.info.id, this.edits);
+      const ed = this.editor;
+      const n = ed ? Object.keys(ed.edits.fingers).length : 0;
+      if (!ed || !n || !confirm(t('settings.resetFingersConfirm', { n }))) return;
+      ed.clearFingers();
+      this.saveEdits();
       this.lastNext = '';
       this.dirty = true;
+      this.renderEditBar();
+      this.closeSettings();
+    });
+    $('resetNotes').addEventListener('click', () => {
+      const ed = this.editor;
+      if (!ed || !hasNoteEdits(ed.edits.notes) || !confirm(t('settings.resetNotesConfirm'))) return;
+      ed.clearNotes();
+      this.closePicker();
+      this.noteEdited(null);
       this.closeSettings();
     });
     const sound = $<HTMLInputElement>('sound');
@@ -542,6 +640,8 @@ export class PracticeView {
 
   private togglePlay(): void {
     if (!this.engine) return;
+    // Space while editing: done, and play from here
+    if (this.editing.on) this.setEditing(false);
     this.app.synth.unlock();
     this.closePicker();
     this.engine.toggle();
@@ -574,8 +674,7 @@ export class PracticeView {
     this.app.settings.midiSplit = split;
     this.app.save();
     const score = scoreFromStored(f, split);
-    applyEdits(score, this.edits);
-    this.open(score, this.info, this.edits);
+    this.open(score, this.info, this.editor?.edits ?? { fingers: {}, notes: emptyNoteEdits() });
   }
 
   private openSettings(): void {
@@ -594,10 +693,11 @@ export class PracticeView {
     const isMidi = this.info?.source === 'file' && this.info.kind === 'midi';
     $('midiSplitRow').hidden = !isMidi;
     if (isMidi) $<HTMLSelectElement>('midiSplit').value = loadPieceSettings(this.info!.id).split ?? s.midiSplit;
-    const edited = Object.keys(this.edits).length;
+    const edited = this.editor ? Object.keys(this.editor.edits.fingers).length : 0;
     const reset = $('resetFingers');
     reset.hidden = edited === 0;
     reset.textContent = t('settings.resetFingers', { n: edited });
+    $('resetNotes').hidden = !this.editor || !hasNoteEdits(this.editor.edits.notes);
     this.renderThemes();
     $('settings').hidden = false;
     $('settingsBtn').setAttribute('aria-expanded', 'true');
@@ -703,12 +803,12 @@ export class PracticeView {
     this.closeSettings();
     this.picked = n;
     this.stage.selected = n;
-    const style = this.app.nameStyle();
-    let head = t('picker.head', { note: noteName(n.pitch, style), m: n.measure });
-    if (e.hand === 'both') head += ` · ${t(n.hand === 'L' ? 'hand.L' : 'hand.R').toLowerCase()}`;
-    $('pickerNote').textContent = head;
+    // the hand is in the switch below
+    $('pickerNote').textContent = t('picker.head', { note: noteName(n.pitch, this.app.nameStyle()), m: n.measure });
     const src = n.fingerSource;
     $('pickerSrc').textContent = src ? t(`picker.src.${src}` as Key) : '';
+    document.querySelectorAll<HTMLInputElement>('input[name=pickHand]').forEach((r) => (r.checked = r.value === n.hand));
+    $('pickerRetune').hidden = !this.editing.on;
     $('pickerFingers')
       .querySelectorAll<HTMLButtonElement>('.pf')
       .forEach((b) => {
@@ -735,7 +835,9 @@ export class PracticeView {
     let x = a.x + gap;
     if (x + pw > wrap.clientWidth - 8) x = a.x - gap - pw;
     x = Math.max(8, Math.min(x, wrap.clientWidth - pw - 8));
-    const y = Math.max(8, Math.min(a.y - ph / 2, this.stage.waterY - ph - 8));
+    // clear of the editing bar at the top while editing
+    const minY = this.editing.on ? $('editBar').offsetTop + $('editBar').offsetHeight + 8 : 8;
+    const y = Math.max(minY, Math.min(a.y - ph / 2, this.stage.waterY - ph - 8));
     picker.style.left = `${x}px`;
     picker.style.top = `${y}px`;
     const current = picker.querySelector<HTMLButtonElement>('.pf[aria-pressed=true]') ?? picker.querySelector<HTMLButtonElement>('.pf');
@@ -750,15 +852,184 @@ export class PracticeView {
     this.dirty = true;
   }
 
-  private chooseFinger(f: Finger | undefined): void {
-    const n = this.picked;
-    if (!n || !this.score || !this.info) return;
-    setFinger(this.score, n, f, this.edits);
-    void putFingerings(this.info.id, this.edits);
+  private chooseFinger(f: Finger | undefined, n: ScoreNote | null = this.picked): void {
+    if (!n || !this.editor) return;
+    this.editor.setFinger(n, f);
+    this.saveEdits();
     this.closePicker();
+    // while editing the note stays chosen, for the arrow keys
+    if (this.editing.on) this.stage.selected = n;
     this.lastNext = '';
+    this.renderEditBar();
     if (f) this.showHint(t('hint.fingerSet', { f, fname: fingerName(f) }), 2200, true);
     else this.showHint(t('hint.fingerReset'), 1800, true);
+  }
+
+  /* ---------- editing the notes ---------- */
+
+  private setEditing(on: boolean): void {
+    const e = this.engine;
+    if (!e || this.editing.on === on) return;
+    this.closePicker();
+    this.editing.setOn(on);
+    this.stage.selected = null;
+    if (on) {
+      e.setPlaying(false);
+      this.hideHint();
+    } else {
+      // carry on from where the editing ended, or from the start of the bars when that is outside them
+      e.seek(e.pos);
+      this.kb.fitTo(e.activeNotes.map((n) => n.pitch));
+    }
+    this.stage.fitRange();
+    this.renderEditBar();
+    this.lastNext = this.lastStats = '';
+    this.syncControls();
+    this.dirty = true;
+  }
+
+  /** Editing off without carrying on anywhere: another piece opens, or the screen closes. */
+  private leaveEditing(): void {
+    if (!this.editing.on) return;
+    this.editing.setOn(false);
+    this.stage.selected = null;
+    this.renderEditBar();
+  }
+
+  /** While editing, a change of hand or mode keeps the bars where they are instead of starting over. */
+  private keepPlace(change: () => void): void {
+    const e = this.engine;
+    if (!e || !this.editing.on) {
+      change();
+      return;
+    }
+    const pos = e.pos;
+    change();
+    e.pos = pos;
+    e.reload();
+    this.stage.selected = null;
+  }
+
+  /** The notes changed: store the edits, regroup the notes and keep `sel` chosen. */
+  private noteEdited(sel: ScoreNote | null): void {
+    const e = this.engine;
+    if (!e || !this.score) return;
+    this.saveEdits();
+    // a note given to the other hand stays in sight: both hands are shown then
+    let hand = e.hand;
+    if (!this.handAvailable(hand)) hand = e.pickHand();
+    else if (sel && hand !== 'both' && sel.hand !== hand) hand = 'both';
+    if (hand !== e.hand) {
+      const pos = e.pos;
+      e.setHand(hand);
+      e.pos = pos;
+      this.kb.fitTo(e.activeNotes.map((n) => n.pitch));
+    }
+    e.reload();
+    if (!this.editing.on) this.stage.fitRange();
+    this.buildHands();
+    this.stage.selected = sel;
+    this.lastNext = this.lastStats = '';
+    this.syncControls();
+    this.renderEditBar();
+    this.dirty = true;
+  }
+
+  /** The picture of the hands, built again when the piece's hands change (a note given to a hand that had none). */
+  private buildHands(always = false): void {
+    const h = this.score!.hands;
+    const key = `${h.L} ${h.R}`;
+    if (!always && key === this.handsKey) return;
+    this.handsKey = key;
+    this.hands.build(h);
+  }
+
+  private saveEdits(): void {
+    const info = this.info;
+    const ed = this.editor;
+    if (!info || !ed) return;
+    this.saving = this.saving.then(() => putPieceEdits(info.id, ed.edits));
+  }
+
+  private undo(): void {
+    if (!this.editor?.undo()) return;
+    this.closePicker();
+    this.noteEdited(null);
+    this.showHint(t('edit.undone'), 1400, true);
+  }
+
+  private redo(): void {
+    if (!this.editor?.redo()) return;
+    this.closePicker();
+    this.noteEdited(null);
+    this.showHint(t('edit.redone'), 1400, true);
+  }
+
+  private deleteNote(n: ScoreNote): void {
+    const ed = this.editor;
+    if (!ed) return;
+    const name = noteName(n.pitch, this.app.nameStyle());
+    ed.remove(n);
+    this.closePicker();
+    this.noteEdited(null);
+    toast(t('note.deleted', { note: name }), { ms: 5000, action: { label: t('undo'), run: () => this.undo() } });
+  }
+
+  private setNoteHand(n: ScoreNote, hand: Hand): void {
+    const ed = this.editor;
+    if (!ed || n.hand === hand) return;
+    const m = ed.change(n, { hand });
+    this.noteEdited(m);
+    this.openPicker(m);
+    this.showHint(t(hand === 'L' ? 'hint.noteToL' : 'hint.noteToR', { note: noteName(m.pitch, this.app.nameStyle()) }), 2200, true);
+  }
+
+  /** A key played while editing with a note picked: the note goes to that key (with "any octave", into the octave nearest to it). */
+  private retune(n: ScoreNote, p: number): void {
+    const ed = this.editor;
+    const score = this.score;
+    if (!ed || !score) return;
+    let pitch = p;
+    if (this.app.settings.anyOctave) {
+      pitch = p + 12 * Math.round((n.pitch - p) / 12);
+      if (pitch > this.stage.high) pitch -= 12;
+      if (pitch < this.stage.low) pitch += 12;
+    }
+    if (pitch === n.pitch) return;
+    const dur = Math.min(n.dur, roomUntil(score, pitch, n.t, n) - n.t);
+    if (dur <= 0) return;
+    const style = this.app.nameStyle();
+    const m = ed.change(n, { pitch, dur });
+    this.noteEdited(m);
+    this.openPicker(m);
+    this.showHint(t('hint.noteRetuned', { from: noteName(n.pitch, style), to: noteName(m.pitch, style) }), 1800, true);
+  }
+
+  /** A note played briefly, to check it by ear. */
+  private audition(p: number, beats: number): void {
+    const score = this.score;
+    const e = this.engine;
+    if (!score || !e) return;
+    this.app.synth.unlock();
+    this.app.synth.noteOn(p, 0.7, Math.min(1.2, Math.max(0.15, (beats * 60) / (bpmAt(score, Math.max(0, e.pos)) * e.speed))));
+  }
+
+  private renderEditBar(): void {
+    const on = this.editing.on;
+    $('editBar').hidden = !on;
+    $('stage').parentElement!.classList.toggle('editing', on);
+    $('edit').setAttribute('aria-pressed', String(on));
+    $<HTMLButtonElement>('editUndo').disabled = !this.editor?.canUndo;
+    $<HTMLButtonElement>('editRedo').disabled = !this.editor?.canRedo;
+  }
+
+  private renderEditTitles(): void {
+    const undo = $('editUndo');
+    undo.title = t('edit.undo', { keys: MAC ? '⌘Z' : 'Ctrl+Z' });
+    undo.setAttribute('aria-label', undo.title);
+    const redo = $('editRedo');
+    redo.title = t('edit.redo', { keys: MAC ? '⇧⌘Z' : 'Ctrl+Y' });
+    redo.setAttribute('aria-label', redo.title);
   }
 
   /* ---------- progress ---------- */
@@ -979,7 +1250,7 @@ export class PracticeView {
       $('stats').innerHTML = stats;
       this.lastStats = stats;
     }
-    $('nowTip').hidden = e.playing || e.mode === 'listen';
+    $('nowTip').hidden = e.playing || e.mode === 'listen' || this.editing.on;
     this.renderPlay();
   }
 

@@ -1,11 +1,13 @@
 /**
  * Imported files are kept in IndexedDB (database "koimidi", store "files"),
  * keyed by the SHA-256 of their bytes so re-importing the same file never
- * creates a duplicate. The user's finger edits ("fingerings") and practice
- * statistics ("progress") are stored under the same id (or the library slug).
+ * creates a duplicate. The user's edits of a piece, fingers and notes (store
+ * "fingerings", named after what it held first), and practice statistics
+ * ("progress") are stored under the same id (or the library slug).
  * Everything stays in this browser.
  */
 import type { FingerEdits } from '../score/edits';
+import { emptyNoteEdits, hasNoteEdits, type NoteEdits, type PieceEdits } from '../score/note-edits';
 import { FINGERS, PROGRESS, STORE, tx } from './db';
 
 export type FileKind = 'midi' | 'musicxml' | 'mxl';
@@ -35,9 +37,12 @@ export interface StoredFile {
 
 export type StoredFileMeta = Omit<StoredFile, 'bytes'>;
 
-interface StoredFingerings {
+interface StoredEdits {
   id: string;
+  /** fingers by note key */
   edits: FingerEdits;
+  /** notes added, taken out or moved (absent in records from before note editing) */
+  notes?: NoteEdits;
   updatedAt: number;
 }
 
@@ -84,19 +89,21 @@ export async function deleteFile(id: string): Promise<void> {
   );
 }
 
-/** The user's finger edits for a piece (file hash or library slug); empty when none or storage is unavailable. */
-export async function getFingerings(id: string): Promise<FingerEdits> {
+/** The user's edits of a piece (file hash or library slug); empty when none or storage is unavailable. */
+export async function getPieceEdits(id: string): Promise<PieceEdits> {
   try {
-    const rec = await tx<StoredFingerings | undefined>('readonly', (s) => s.get(id), FINGERS);
-    return rec?.edits ?? {};
+    const rec = await tx<StoredEdits | undefined>('readonly', (s) => s.get(id), FINGERS);
+    return { fingers: rec?.edits ?? {}, notes: { removed: rec?.notes?.removed ?? [], added: rec?.notes?.added ?? [] } };
   } catch {
-    return {};
+    return { fingers: {}, notes: emptyNoteEdits() };
   }
 }
 
-export async function putFingerings(id: string, edits: FingerEdits): Promise<void> {
+export async function putPieceEdits(id: string, edits: PieceEdits): Promise<void> {
+  // copied now: the edits may change again before the database opens
+  const rec: StoredEdits = { id, edits: { ...edits.fingers }, notes: structuredClone(edits.notes), updatedAt: Date.now() };
   try {
-    if (Object.keys(edits).length) await tx('readwrite', (s) => s.put({ id, edits: { ...edits }, updatedAt: Date.now() }), FINGERS);
+    if (Object.keys(rec.edits).length || hasNoteEdits(edits.notes)) await tx('readwrite', (s) => s.put(rec), FINGERS);
     else await tx('readwrite', (s) => s.delete(id), FINGERS);
   } catch {
     /* storage unavailable: edits last for this visit only */

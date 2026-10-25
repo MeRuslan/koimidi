@@ -50,7 +50,11 @@ export class ComputerKeyboard {
   private onDown = (e: KeyboardEvent): void => {
     const el = e.target as HTMLElement | null;
     if (el && isTextEntry(el)) return;
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) {
+      // shortcuts with a modifier (undo) go to the commands only; they never play a note
+      if (this.h.command(e.code, e)) e.preventDefault();
+      return;
+    }
     if (this.h.command(e.code, e)) {
       e.preventDefault();
       return;

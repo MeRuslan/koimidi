@@ -665,6 +665,25 @@ canvas#stage { position: absolute; inset: 0; width: 100%; height: 100%; display:
 .picker .pf[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ink); }
 .picker-foot { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
 .picker-foot button[hidden] + .fine { margin-left: auto; }
+.picker-note { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.picker-hand span { height: 26px; padding: 0 10px; font-size: 12.5px; }
+.picker-retune { max-width: 244px; margin-top: -2px; font-size: 12px; line-height: 1.35; }
+.btn.danger { color: var(--bad); }
+.btn.danger:hover { color: var(--bad); }
+
+/* editing the notes: a bar across the top of the stage */
+.edit-toggle { justify-self: start; }
+.edit-bar {
+  position: absolute; z-index: 5; top: 10px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 20px);
+  display: flex; align-items: center; gap: 4px; padding: 5px 5px 5px 14px; border-radius: var(--r-2);
+  background: var(--surface); border: 1px solid var(--line-2); box-shadow: var(--shadow);
+  animation: drop-in .22s var(--ease);
+}
+.edit-title { display: flex; align-items: center; gap: 7px; flex: none; font: 600 13.5px var(--ui); white-space: nowrap; }
+.edit-title .i { width: 17px; height: 17px; color: var(--accent); }
+.edit-help { min-width: 0; margin: 0 8px 0 6px; padding-left: 12px; border-left: 1px solid var(--line); font-size: 12.5px; line-height: 1.3; color: var(--ink-3); text-wrap: pretty; }
+.edit-bar .btn.primary { margin-left: 4px; }
+.stage-wrap.editing .hint { top: 70px; }
 
 /* ---------- sheets: settings and progress ---------- */
 .sheet {
@@ -873,6 +892,8 @@ button.cell:hover { filter: brightness(1.08); transform: translateY(-1px); }
   .tl-track { flex-basis: 100%; }
   .tl-side { margin: 0 0 0 auto; }
   .hint { top: 10px; font-size: 13.5px; }
+  .edit-help { display: none; }
+  .stage-wrap.editing .hint { top: 58px; }
   .sheet { width: 100vw; border-left: 0; }
 }
 @media (max-width: 640px) {

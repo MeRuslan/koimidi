@@ -368,6 +368,47 @@ export class Engine {
     this.ev.change();
   }
 
+  /**
+   * Carry on from beat `t` inside the range as if the pass had started there
+   * (after the notes were edited around it); outside the range, restart.
+   */
+  seek(t: number): void {
+    const [start, end] = this.range;
+    if (t < start - this.leadBeats() - 1e-6 || t >= end - 1e-6) {
+      this.restart();
+      return;
+    }
+    this.endPass(false);
+    this.startPass();
+    this.clearAuto();
+    this.pos = t;
+    this.catchUpTo = -Infinity;
+    this.waiting = false;
+    this.finished = false;
+    this.playing = false;
+    for (const [p, src] of [...this.keys]) if (src !== 'user') this.keys.delete(p);
+    this.resync();
+  }
+
+  /** The score's notes were edited: group them again and stay where the bars are. */
+  reload(): void {
+    this.groups = groupByOnset(this.activeNotes);
+    this.buildAccompaniment();
+    this.state.clear();
+    this.resync();
+  }
+
+  /** Next note, note states, the other hand and the clicks from the current position on. */
+  private resync(): void {
+    const [start] = this.range;
+    const from = Math.max(this.pos, start);
+    this.next = this.firstGroupAtOrAfter(from);
+    for (const g of this.groups) if (g.t >= start - 1e-6) for (const n of g.notes) this.state.set(n, g.t >= from - 1e-6 ? 0 : 1);
+    this.seekAccompaniment(from);
+    this.buildClicks();
+    this.ev.change();
+  }
+
   setPlaying(on: boolean): void {
     if (on && this.finished) this.restart();
     this.playing = on;

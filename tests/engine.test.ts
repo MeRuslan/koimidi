@@ -325,3 +325,21 @@ describe('engine: pass statistics', () => {
     expect(s.seconds).toBeLessThan(16);
   });
 });
+
+describe('engine: listen mode', () => {
+  it('a repeated key stays lit for the second note, even when frames run ahead of the timers', () => {
+    vi.useFakeTimers();
+    const { e } = make('time: 4/4\ntempo: 120\nR: E4 E4 E4/2 |');
+    e.setMode('listen');
+    e.setPlaying(true);
+    // big frames: the second E4 starts before the first one's release timer fires
+    while (e.pos < 1.05) {
+      e.step(0.1);
+      vi.advanceTimersByTime(20);
+    }
+    expect(e.keys.get(64)).toBe('auto');
+    vi.advanceTimersByTime(400); // the first note's release is due now
+    expect(e.keys.get(64)).toBe('auto');
+    vi.useRealTimers();
+  });
+});

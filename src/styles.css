@@ -217,6 +217,9 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 }
 .popover > * { flex-shrink: 0; }
 .popover .sect { font-size: 11.5px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; padding: 12px 0 2px; }
+.popover .row-note { margin: -2px 0 0; padding: 0 0 8px; font-size: 12.5px; color: var(--ink-dim); border-bottom: 1px solid var(--line); }
+.popover .row-note a { color: var(--water); }
+.popover .row-note.error { color: var(--warn); }
 .popover .actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 10px; border-bottom: 1px solid var(--line); }
 .popover .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .popover .row:has(input[type=checkbox]) { justify-content: flex-start; }

@@ -20,7 +20,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('koimidi-') && k !== CACHE).map((k) => caches.delete(k))))
+      // older versions of the app; the downloaded sounds ("koimidi-sounds") stay
+      .then((keys) => Promise.all(keys.filter((k) => /^koimidi-[0-9a-f]{12}$/.test(k) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -32,6 +33,8 @@ self.addEventListener('message', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET' || !req.url.startsWith(self.registration.scope)) return;
+  // sound banks are large and optional: the page downloads and keeps them itself
+  if (req.url.startsWith(scoped('sounds/'))) return;
   // the page itself: always the cached shell of this version
   if (req.mode === 'navigate') {
     event.respondWith(caches.match(scoped('./'), { ignoreVary: true }).then((hit) => hit || fetch(req)));

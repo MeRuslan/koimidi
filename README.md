@@ -18,6 +18,8 @@ Learning a melody without reading sheet music means you want three things at onc
 - **Learn mode waits for you.** Time stops on each note (or chord) until you play it. Play ahead of the bar and it counts at once; the bars catch up smoothly, no jump.
 - **In-tempo mode** keeps going and counts late and wrong notes. **Listen mode** plays the piece for you.
 - **Your own sound.** A small WebAudio piano plays whatever you press, with sustain pedal support (CC 64), so a silent controller is enough.
+- **A real grand piano.** Pick *Grand piano · Salamander* in Settings: a sampled Yamaha C5 (about 10 MB, downloaded once, then works offline) played by [SpessaSynth](https://github.com/spessasus/spessasynth_lib).
+- **Your own SoundFonts.** Add any `.sf2` or `.sf3` pack and choose its instrument; packs stay in your browser.
 - **Open MIDI and MusicXML** (`.mid`, `.midi`, `.musicxml`, `.xml`, compressed `.mxl`). Parsing happens in the browser; files are kept in your browser's storage (IndexedDB) for next time.
 - **Automatic fingering** (right and left hand) for files that carry none, using a Parncutt-style ergonomic cost model and dynamic programming. Fingering from MusicXML `<fingering>` is kept.
 - **Your own fingering.** Click a bar and pick a finger (or press `1`–`5`). The choice is kept in this browser for that piece, the automatic fingering rearranges the notes around it, and a small dot marks the fingers you chose.
@@ -32,7 +34,7 @@ Learning a melody without reading sheet music means you want three things at onc
 - **Progress.** Practice time, accuracy of every pass, a strip of mistakes per bar (click a bar to loop it), your hardest bars, and how the current bar range has gone pass by pass. The library shows time and best result for each piece.
 - **Works offline.** After the first visit the whole app is kept in the browser; install it from the address bar or the **Install** button and it opens like an app, without the internet.
 - **No MIDI keyboard?** Computer keys `A`–`L` (white) and `W E T Y U O` (black) work, so does tapping the on-screen keys.
-- **Built-in library** of public-domain pieces, from *Twinkle, Twinkle* to *Für Elise* (part A), typeset for koimidi.
+- **Built-in library** of 16 public-domain pieces, from *Twinkle, Twinkle* to *Für Elise* (part A), the Minuet in G, Brahms' Lullaby and *Korobeiniki*, typeset for koimidi.
 - English and Russian interface; settings and your files stay in the browser.
 
 ## Requirements
@@ -55,7 +57,7 @@ Shortcuts: `Space` start/pause · `Enter` restart · `[` `]` loop start/end at t
 
 ## Privacy
 
-There is no account, no analytics and no network requests after the page loads, apart from the browser checking for a new version of the app. Imported files, the fingers you chose, your progress and your settings are stored only in your browser (localStorage and IndexedDB); clearing site data removes them. Recordings stay in memory until you save them. Nothing is uploaded anywhere.
+There is no account, no analytics and no network requests after the page loads, apart from the browser checking for a new version of the app and the grand piano sound, which is downloaded from this same site the first time you choose it. Imported files, SoundFont packs, the fingers you chose, your progress and your settings are stored only in your browser (localStorage, IndexedDB and Cache Storage); clearing site data removes them. Recordings stay in memory until you save them. Nothing is uploaded anywhere.
 
 ## Development
 
@@ -73,7 +75,7 @@ Plain TypeScript + Vite, no UI framework. Layout of `src/`:
 | `score/` | the score model, MIDI and MusicXML importers, MusicXML export, the compact library notation, automatic fingering and the player's finger edits |
 | `practice/` | the practice engine (modes, waiting, hit windows, loop range, octave tolerance, count-in, metronome, the trainer's hand, pass statistics), progress and the recorder |
 | `render/` | the canvas renderer (falling bars, keyboard) |
-| `audio/` | the WebAudio synth |
+| `audio/` | the WebAudio synth and metronome, sampled instruments through SpessaSynth, sound banks (the grand piano and the player's packs) |
 | `input/` | Web MIDI and computer-keyboard input, keyboard profiles |
 | `storage/` | settings in localStorage; files, finger edits and progress in IndexedDB |
 | `library/` | built-in pieces |
@@ -81,6 +83,14 @@ Plain TypeScript + Vite, no UI framework. Layout of `src/`:
 | `sw.js`, `pwa.ts` | the service worker (its file list is filled in by the build, see `vite.config.ts`) and its registration, update prompt and Install button |
 
 Deployment is a GitHub Actions workflow (`.github/workflows/deploy.yml`) that runs the tests, builds, and publishes `dist/` to GitHub Pages on every push to `main`. The build uses a relative base path, so it works from any folder or domain.
+
+### The grand piano
+
+`public/sounds/salamander-grand-piano.sf3` is built from the Salamander Grand Piano SF2 published by [FreePats](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html): 4 of its 16 velocity layers, a milder velocity curve, shortened tails, Ogg Vorbis samples. To rebuild it (needs `ffmpeg` with libvorbis):
+
+```bash
+node scripts/build-piano.mjs SalamanderGrandPiano-V3+20200602.sf2
+```
 
 ### Adding a library piece
 
@@ -103,14 +113,15 @@ Every release starts with a session on a real controller (Komplete Kontrol M32, 
 
 - **v0.2 — learn your own piece** (done). Edit a finger by clicking its bar; edits are kept in the browser per file and the automatic fingering works around them. Export MusicXML with `<fingering>`. Count-in and metronome for the in-tempo mode. Keyboard profile: your controller's range on screen and a warning when a piece does not fit it. Record your playing and export it as `.mid`.
 - **v0.3 — two hands for real** (done). Practise one hand while the trainer plays the other. Progress statistics per piece and per bar range. Offline use as a PWA.
-- **v0.4 — sound.** Sampled piano (Salamander Grand Piano as SF3 through SpessaSynth) and your own SoundFont packs (SF2/SF3). More public-domain pieces in the library.
+- **v0.4 — sound** (done). Sampled piano (Salamander Grand Piano as SF3 through SpessaSynth) and your own SoundFont packs (SF2/SF3). More public-domain pieces in the library.
 - **Deferred:** vector-PDF import in the browser, MIDI output to an external synth, scanned-sheet recognition (OMR).
 
 ## Credits and licenses
 
 - Code: [MIT](LICENSE).
 - Library pieces: public-domain works typeset for this project.
-- [@tonejs/midi](https://github.com/Tonejs/Midi) (MIT), [fflate](https://github.com/101arrowz/fflate) (MIT), fonts [Golos Text](https://github.com/fontsource/fontsource) and [Unbounded](https://github.com/fontsource/fontsource) via Fontsource (SIL OFL).
+- Grand piano sound: [Salamander Grand Piano V3](https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html) by Alexander Holm, [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); SF2 assembly by FreePats; reduced for koimidi as described in `public/sounds/salamander-grand-piano.txt`. This file is under CC BY 3.0, not MIT.
+- [SpessaSynth](https://github.com/spessasus/spessasynth_lib) (Apache-2.0), [@tonejs/midi](https://github.com/Tonejs/Midi) (MIT), [fflate](https://github.com/101arrowz/fflate) (MIT), fonts [Golos Text](https://github.com/fontsource/fontsource) and [Unbounded](https://github.com/fontsource/fontsource) via Fontsource (SIL OFL).
 - Fingering cost model after Parncutt, Sloboda, Clarke, Raekallio & Desain, *An ergonomic model of keyboard fingering for melodic fragments* (1997).
 
 The name: Bashkir *көй* ("melody") + koi carp in a pond + MIDI.

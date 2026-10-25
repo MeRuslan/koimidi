@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.4.0 — 2026-10-25
+
+Sound.
+
+- Grand piano: Salamander Grand Piano V3 (Yamaha C5, Alexander Holm, CC BY 3.0) as a 9.8 MB SF3 built for the web by `scripts/build-piano.mjs` (4 of 16 velocity layers, milder velocity curve, shortened tails, Ogg Vorbis), played by SpessaSynth in an AudioWorklet; downloaded with progress the first time it is chosen and kept in Cache Storage for offline use
+- Your own SoundFont packs (`.sf2`, `.sf3`): added from Settings, checked, stored in IndexedDB (version 4 adds the "soundbanks" store), with a choice of instrument inside the pack; remove a pack from Settings
+- The simple synth keeps playing while a sound loads and takes over if a sound cannot be loaded; the chosen sound comes back on the next visit
+- Four more library pieces: Row, Row, Row Your Boat; Brahms' Lullaby; Minuet in G (Petzold); Korobeiniki
+- Fixed: in Listen mode a note repeated right after itself was cut off almost at once (the first note's release timer stopped the second one); the key highlight had the same problem
+
 ## v0.3.0 — 2026-10-25
 
 Two hands for real.

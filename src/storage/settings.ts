@@ -2,6 +2,7 @@
  * Settings live in localStorage under "koimidi:" keys (the site may share an
  * origin with other github.io pages, so every key is prefixed).
  */
+import type { Instrument } from '../audio/banks';
 import type { KeyboardChoice } from '../input/profile';
 import type { HandSel, Mode } from '../practice/engine';
 import type { MidiSplit } from '../score/midi';
@@ -28,6 +29,10 @@ export interface Settings {
   keyboard: KeyboardChoice;
   /** the trainer plays the other hand when one hand of a two-hand piece is practised */
   accompany: boolean;
+  /** which sound plays the notes */
+  instrument: Instrument;
+  /** chosen preset per sound bank, as "bankMSB:bankLSB:program" */
+  patches: Record<string, string>;
   lastPieceId?: string;
 }
 
@@ -57,6 +62,8 @@ export const DEFAULT_SETTINGS: Settings = {
   countIn: true,
   keyboard: 'auto',
   accompany: true,
+  instrument: 'simple',
+  patches: {},
 };
 
 function read<T>(key: string): T | null {

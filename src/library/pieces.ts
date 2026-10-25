@@ -206,4 +206,65 @@ L: r/4. | r/4. | A2/16:5 E3:2 A3:1 r/8. | E2/16:5 E3:2 G#3:1 r/8. | A2/16:5 E3:2
 L: r/4. | A2/16:5 E3:2 A3:1 r/8. | E2/16:5 E3:2 G#3:1 r/8. | A2/16:5 E3:2 A3:1 r/8. |
 `,
   },
+  {
+    id: 'row-your-boat',
+    text: `
+title: Row, Row, Row Your Boat
+title_ru: Row, Row, Row Your Boat
+composer: Traditional (USA, 1852)
+composer_ru: Американская народная, 1852
+time: 6/8
+tempo: 92
+difficulty: 1
+R: @A C4/4.:1 C4/4. | C4/4 D4/8:2 E4/4.:3 | E4/4:3 D4/8:2 E4/4:3 F4/8:4 | G4/2.:5 |
+R: @B C5/8:5 C5 C5 G4:3 G4 G4 | E4:2 E4 E4 C4:1 C4 C4 | G4/4:5 F4/8:4 E4/4:3 D4/8:2 | C4/2.:1 |
+`,
+  },
+  {
+    id: 'brahms-lullaby',
+    text: `
+title: Lullaby (Wiegenlied), Op. 49 No. 4
+title_ru: Колыбельная, соч. 49 № 4
+composer: Johannes Brahms (1868)
+composer_ru: Иоганнес Брамс, 1868
+time: 3/4
+tempo: 76
+pickup: 1
+difficulty: 2
+R: E4/8:1 E4 | @A G4/4.:3 E4/8:1 E4/4 | G4/2:3 E4/8:1 G4:3 | C5/4:5 B4/4.:4 A4/8:3 | A4/4:3 G4:2 D4/8:1 E4:2 |
+R: F4/4:3 D4:1 D4/8:1 E4:2 | F4/2:3 D4/8:1 F4:2 | B4/8:4 A4:3 G4/4:2 B4:4 | C5/2:5 C4/8:1 C4 |
+R: @B C5/2:5 A4/8:3 F4:1 | G4/2:3 E4/8:2 C4:1 | F4/4:2 G4:3 A4:4 | G4/2:3 C4/8:1 C4 |
+R: C5/2:5 A4/8:3 F4:1 | G4/2:3 E4/8:2 C4:1 | F4/4:4 E4:3 D4:2 | C4/2:1 |
+`,
+  },
+  {
+    id: 'minuet-g',
+    text: `
+title: Minuet in G major, BWV Anh. 114
+title_ru: Менуэт соль мажор, BWV Anh. 114
+composer: Christian Petzold (c. 1725), from the Notebook for Anna Magdalena Bach
+composer_ru: Кристиан Петцольд, около 1725, из Нотной тетради Анны Магдалены Бах
+time: 3/4
+tempo: 104
+difficulty: 2
+R: @A D5/4:5 G4/8:1 A4:2 B4:3 C5:4 | D5/4:5 G4:1 G4 | E5/4:3 C5/8:1 D5:2 E5:3 F#5:4 | G5/4:5 G4:1 G4 |
+R: C5/4:4 D5/8:5 C5:4 B4:3 A4:2 | B4/4:3 C5/8:4 B4:3 A4:2 G4:1 | F#4/4:2 G4/8:1 A4:2 B4:3 G4:1 | A4/2.:2 |
+R: D5/4:5 G4/8:1 A4:2 B4:3 C5:4 | D5/4:5 G4:1 G4 | E5/4:3 C5/8:1 D5:2 E5:3 F#5:4 | G5/4:5 G4:1 G4 |
+R: C5/4:4 D5/8:5 C5:4 B4:3 A4:2 | B4/4:3 C5/8:4 B4:3 A4:2 G4:1 | A4/4:3 B4/8:4 A4:3 G4:2 F#4:1 | G4/2.:2 |
+`,
+  },
+  {
+    id: 'korobeiniki',
+    text: `
+title: Korobeiniki
+title_ru: Коробейники
+composer: Russian folk song (words by Nikolay Nekrasov, 1861)
+composer_ru: Русская народная песня на стихи Николая Некрасова, 1861
+time: 4/4
+tempo: 104
+difficulty: 2
+R: @A E5/4:5 B4/8:2 C5:3 D5/4:4 C5/8:3 B4:2 | A4/4:1 A4/8:1 C5:3 E5/4:5 D5/8:4 C5:3 | B4/4.:2 C5/8:3 D5/4:4 E5:5 | C5/4:3 A4:1 A4/2:1 |
+R: @B r/8 D5/4:2 F5/8:3 A5/4:5 G5/8:4 F5:3 | E5/4.:2 C5/8:1 E5/4:3 D5/8:2 C5:1 | B4/4:1 B4/8:1 C5:2 D5/4:3 E5:4 | C5/4:2 A4:1 A4/2:1 |
+`,
+  },
 ];

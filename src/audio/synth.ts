@@ -1,14 +1,36 @@
 /**
- * Small piano-like WebAudio synth: triangle + 2nd and 3rd harmonics through a
+ * All sound goes through here: the player's keys, listen mode, the trainer's
+ * hand, playback of recordings, and the metronome. Notes are played by a
+ * sampled instrument (SpessaSynth, see sampler.ts) once one is loaded, and by
+ * the small built-in synth otherwise, including while a sound bank loads.
+ *
+ * The built-in synth: triangle + 2nd and 3rd harmonics through a
  * velocity-dependent low-pass filter, ~6 s decay, sustain pedal (CC 64).
  * Audio starts only after a user gesture (browser policy), see `unlock()`.
  */
+import { Sampler, type Patch } from './sampler';
+
+interface Voice {
+  g: GainNode;
+  oscs: OscillatorNode[];
+  held: boolean;
+}
+
 export class Synth {
   private ac: AudioContext | null = null;
   private master: GainNode | null = null;
-  private voices = new Map<number, { g: GainNode; oscs: OscillatorNode[]; held: boolean }>();
+  private voices = new Map<number, Voice>();
   sustain = false;
   volume = 0.55;
+  private sampler: Sampler | null = null;
+  /** the sampler, kept when switching back to the built-in synth, to switch again quickly */
+  private samplerCache: Promise<Sampler> | null = null;
+  /** the latest timed note on each key, so an earlier note's timer does not release a later one */
+  private timed = new Map<number, object>();
+  private unlocked!: () => void;
+  private whenUnlocked = new Promise<void>((r) => (this.unlocked = r));
+  /** bank switches run one after another */
+  private switching: Promise<unknown> = Promise.resolve();
 
   /** Create or resume the audio context. Call from a user gesture. */
   unlock(): void {
@@ -21,8 +43,53 @@ export class Synth {
       const comp = this.ac.createDynamicsCompressor();
       this.master.connect(comp);
       comp.connect(this.ac.destination);
+      this.unlocked();
     }
     if (this.ac.state === 'suspended') void this.ac.resume();
+  }
+
+  /** Is a sampled instrument playing the notes? */
+  get sampled(): boolean {
+    return !!this.sampler;
+  }
+
+  /**
+   * Play notes with this sound bank (null: the built-in synth). Waits for the
+   * first user gesture if audio is not running yet. Returns the bank's
+   * melodic presets; the first one is selected.
+   */
+  useBank(bytes: ArrayBuffer | null): Promise<Patch[]> {
+    const run = async (): Promise<Patch[]> => {
+      if (!bytes) {
+        this.sampler?.allOff();
+        this.sampler = null;
+        return [];
+      }
+      await this.whenUnlocked;
+      this.samplerCache ??= Sampler.create(this.ac!, this.master!);
+      let s: Sampler;
+      try {
+        s = await this.samplerCache;
+      } catch (e) {
+        this.samplerCache = null;
+        throw e;
+      }
+      this.sampler?.allOff();
+      this.sampler = null; // the built-in synth plays while the bank loads
+      const patches = await s.load(bytes);
+      if (!patches.length) throw new Error('no instruments in this sound bank');
+      s.select(patches[0]);
+      s.sustain(this.sustain);
+      this.sampler = s;
+      return patches;
+    };
+    const p = this.switching.then(run, run);
+    this.switching = p.catch(() => undefined);
+    return p;
+  }
+
+  selectPatch(p: Patch): void {
+    this.sampler?.select(p);
   }
 
   get ready(): boolean {
@@ -37,7 +104,17 @@ export class Synth {
   noteOn(pitch: number, vel = 0.8, seconds = 0): void {
     const ac = this.ac;
     if (!ac || !this.master) return;
-    this.noteOff(pitch, true);
+    if (this.sampler) {
+      const sampler = this.sampler;
+      sampler.noteOn(pitch, vel);
+      const token = {};
+      if (seconds > 0) {
+        this.timed.set(pitch, token);
+        setTimeout(() => this.timed.get(pitch) === token && sampler.noteOff(pitch), seconds * 1000);
+      } else this.timed.delete(pitch);
+      return;
+    }
+    this.release(pitch, true);
     const t = ac.currentTime;
     const f = 440 * Math.pow(2, (pitch - 69) / 12);
     const g = ac.createGain();
@@ -71,11 +148,23 @@ export class Synth {
       o.start(t);
       o.stop(t + 6.2);
     }
-    this.voices.set(pitch, { g, oscs: [o1, o2, o3], held: true });
-    if (seconds > 0) setTimeout(() => this.noteOff(pitch), seconds * 1000);
+    const voice: Voice = { g, oscs: [o1, o2, o3], held: true };
+    this.voices.set(pitch, voice);
+    // a timed note releases only itself: the same key may have been struck again meanwhile
+    if (seconds > 0) setTimeout(() => this.voices.get(pitch) === voice && this.release(pitch), seconds * 1000);
   }
 
   noteOff(pitch: number, force = false): void {
+    if (this.sampler) {
+      // the sampler holds the note itself while the pedal is down
+      this.timed.delete(pitch);
+      this.sampler.noteOff(pitch);
+    }
+    this.release(pitch, force);
+  }
+
+  /** Release a built-in synth voice (there may be one on this key from before a sound bank loaded). */
+  private release(pitch: number, force = false): void {
     const v = this.voices.get(pitch);
     const ac = this.ac;
     if (!v || !ac) return;
@@ -122,10 +211,13 @@ export class Synth {
 
   setSustain(on: boolean): void {
     this.sustain = on;
-    if (!on) for (const [p, v] of [...this.voices]) if (!v.held) this.noteOff(p, true);
+    this.sampler?.sustain(on);
+    if (!on) for (const [p, v] of [...this.voices]) if (!v.held) this.release(p, true);
   }
 
   allOff(): void {
-    for (const p of [...this.voices.keys()]) this.noteOff(p, true);
+    this.sampler?.allOff();
+    this.timed.clear();
+    for (const p of [...this.voices.keys()]) this.release(p, true);
   }
 }

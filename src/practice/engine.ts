@@ -120,6 +120,8 @@ export class Engine {
   private nextClick = 0;
   private acc: ScoreNote[] = [];
   private nextAcc = 0;
+  /** the note that last lit each key automatically */
+  private keyNote = new Map<number, ScoreNote>();
   private cur: PassStats | null = null;
   private idle = 0;
 
@@ -235,7 +237,13 @@ export class Engine {
     const secs = (n.dur * 60) / (bpmAt(this.score, n.t) * this.speed);
     this.ev.sound(n.pitch, (n.velocity ?? 0.7) * gain, secs, n);
     this.keys.set(n.pitch, src);
-    this.autoTimers.push(setTimeout(() => { if (this.keys.get(n.pitch) === src) this.keys.delete(n.pitch); }, Math.max(120, secs * 1000 - 40)));
+    this.keyNote.set(n.pitch, n);
+    // release the key only if this note still holds it (the next note may repeat the same key)
+    this.autoTimers.push(setTimeout(() => {
+      if (this.keyNote.get(n.pitch) !== n) return;
+      this.keyNote.delete(n.pitch);
+      if (this.keys.get(n.pitch) === src) this.keys.delete(n.pitch);
+    }, Math.max(120, secs * 1000 - 40)));
   }
 
   /* ---------- pass statistics ---------- */

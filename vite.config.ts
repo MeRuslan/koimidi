@@ -8,7 +8,7 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 /**
  * Emits sw.js from src/sw.js with the list of files to keep offline: the page,
  * every built asset except the .woff fallbacks of the fonts (browsers that run
- * service workers use .woff2), and the files in public/.
+ * service workers use .woff2), and the files in public/ except the sounds.
  */
 function serviceWorker(): Plugin {
   return {
@@ -16,7 +16,8 @@ function serviceWorker(): Plugin {
     apply: 'build',
     generateBundle(_options, bundle) {
       const built = Object.keys(bundle).filter((f) => !f.endsWith('.woff') && !f.endsWith('.map'));
-      const pub = readdirSync(new URL('./public', import.meta.url));
+      // public/sounds holds the optional grand piano: downloaded on demand, not with the app
+      const pub = readdirSync(new URL('./public', import.meta.url)).filter((f) => f !== 'sounds');
       const files = ['./', ...built.filter((f) => f !== 'index.html'), ...pub].sort();
       const template = readFileSync(new URL('./src/sw.js', import.meta.url), 'utf8');
       const version = createHash('sha256').update(pkg.version).update(template).update(files.join('\n')).digest('hex').slice(0, 12);

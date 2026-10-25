@@ -12,6 +12,7 @@ import { loadPieceSettings, loadSettings, saveSettings, type Lang, type Settings
 import { $, toast } from './ui/dom';
 import { HomeView } from './ui/home';
 import { PracticeView } from './ui/practice';
+import { SoundSettings } from './ui/sound-settings';
 
 export interface PieceInfo {
   id: string;
@@ -25,6 +26,7 @@ export class App {
   midi: MidiStatus = { kind: 'requesting' };
   home: HomeView;
   practice: PracticeView;
+  sound: SoundSettings;
   current: PieceInfo | null = null;
   private unlockToastShown = false;
 
@@ -32,6 +34,8 @@ export class App {
     setLang(this.settings.lang === 'auto' ? detectLang() : this.settings.lang);
     this.home = new HomeView(this);
     this.practice = new PracticeView(this);
+    this.sound = new SoundSettings(this);
+    void this.sound.restore();
     applyI18n();
     $('version').textContent = `v${__APP_VERSION__}`;
     this.home.render();

@@ -1,6 +1,6 @@
 {
   "name": "koimidi",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "koimidi — free piano trainer for MIDI keyboards in the browser: falling notes with finger numbers, wait-for-key mode, built-in sound. No sign-up, files never leave the browser.",
   "private": true,
   "type": "module",
@@ -22,10 +22,12 @@
     "@fontsource/golos-text": "^5.2.0",
     "@fontsource/unbounded": "^5.2.0",
     "@tonejs/midi": "^2.0.28",
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "spessasynth_lib": "^4.3.14"
   },
   "devDependencies": {
     "happy-dom": "^21.0.0",
+    "spessasynth_core": "^4.3.22",
     "typescript": "^5.9.0",
     "vite": "^8.0.0",
     "vitest": "^5.0.0"

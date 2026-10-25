@@ -172,6 +172,11 @@
         </select>
       </label>
       <div class="sect" data-i18n="settings.sect.sound"></div>
+      <label class="row"><span data-i18n="settings.instrument"></span><select id="instrument"></select></label>
+      <p id="instrumentNote" class="row-note" hidden></p>
+      <label class="row" id="patchRow" hidden><span data-i18n="sound.patch"></span><select id="patch"></select></label>
+      <div class="actions" id="packActions" hidden><button id="removePack" type="button" class="ghost small" data-i18n="sound.remove"></button></div>
+      <input id="packFile" type="file" accept=".sf2,.sf3" hidden>
       <label class="row"><input type="checkbox" id="sound"><span data-i18n="settings.sound"></span></label>
       <label class="row"><span data-i18n="settings.volume"></span><input id="volume" type="range" min="0" max="1" step="0.05"></label>
       <label class="row"><input type="checkbox" id="countIn"><span data-i18n="settings.countIn"></span></label>

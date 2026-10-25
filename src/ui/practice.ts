@@ -519,6 +519,7 @@ export class PracticeView {
     $<HTMLSelectElement>('noteNames').value = s.noteNames;
     $<HTMLSelectElement>('lang').value = this.app.lang;
     this.fillKeyboardSelect();
+    void this.app.sound.render();
     const isMidi = this.info?.source === 'file' && this.info.kind === 'midi';
     $('midiSplitRow').hidden = !isMidi;
     if (isMidi) $<HTMLSelectElement>('midiSplit').value = loadPieceSettings(this.info!.id).split ?? s.midiSplit;

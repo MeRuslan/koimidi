@@ -337,6 +337,14 @@
         <p id="viStatus" class="vi-status" role="status" aria-live="polite"></p>
         <div id="viProgressRow" class="vi-progress" hidden><div id="viProgress"></div></div>
         <canvas id="viSeen" class="vi-seen" aria-hidden="true" hidden></canvas>
+        <div id="viByRow" class="vi-by" hidden>
+          <span data-i18n="video.by"></span>
+          <div class="seg" role="radiogroup" data-i18n-aria="video.by">
+            <label><input type="radio" name="viBy" value="ear"><span data-i18n="video.by.ear"></span></label>
+            <label><input type="radio" name="viBy" value="eye"><span data-i18n="video.by.eye"></span></label>
+          </div>
+          <p id="viByNote" class="fine"></p>
+        </div>
         <div class="vi-actions">
           <button id="viStart" type="button" class="btn primary" hidden></button>
           <label id="viSpeedRow" class="vi-speed" hidden><span data-i18n="video.speed"></span>

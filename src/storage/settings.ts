@@ -10,6 +10,8 @@ import type { ThemeChoice } from '../theme';
 
 export type Lang = 'ru' | 'en';
 export type NoteNames = 'auto' | 'solfege' | 'letters';
+/** How a video is recognised: by its sound, or by the keys lighting up in the picture. */
+export type VideoBy = 'ear' | 'eye';
 
 export interface Settings {
   v: 1;
@@ -36,6 +38,8 @@ export interface Settings {
   patches: Record<string, string>;
   /** the look: paper, lacquer, console, or like the system */
   theme: ThemeChoice;
+  /** how a video is recognised: by ear (the default) or by the lit keys */
+  videoBy: VideoBy;
   lastPieceId?: string;
 }
 
@@ -58,6 +62,7 @@ export const DEFAULT_SETTINGS: Settings = {
   loop: true,
   sound: true,
   volume: 0.55,
+  videoBy: 'ear',
   anyOctave: true,
   noteNames: 'auto',
   midiSplit: 'auto',

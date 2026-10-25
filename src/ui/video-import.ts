@@ -1,8 +1,9 @@
 /**
  * "From a video" screen: a YouTube link, another tab or a video file in, a
- * piece in "Your files" out. koimidi plays the video, finds the keyboard in
- * it, notes down every key that lights up, and turns that into bars.
- * Everything runs on this device.
+ * piece in "Your files" out. koimidi plays the video and listens to it (the
+ * default), or finds the keyboard in the picture and notes down every key
+ * that lights up; either way the notes are turned into bars. Everything
+ * runs on this device.
  */
 import type { App } from '../app';
 import { barsLabel, keysLabel, noteName, notesLabel, t } from '../i18n';
@@ -13,6 +14,7 @@ import type { Frame } from '../video/frame';
 import { sameKeyboard, type KeyboardLayout } from '../video/keyboard';
 import { KeyTracker, playable, type RawNote } from '../video/tracker';
 import { octaveHint, toMidi, transcribe, type Transcribed } from '../video/transcribe';
+import { saveSettings, type VideoBy } from '../storage/settings';
 import { YouTubePlayer, YT_STATE, youTubeId, youTubeStart, type YouTubeProblem } from '../video/youtube';
 import { onThemeChange, palette } from '../theme';
 import { $, el, formatDuration } from './dom';
@@ -93,6 +95,10 @@ export class VideoImportView {
     $('viStart').addEventListener('click', () => this.start());
     $('viStop').addEventListener('click', () => (this.phase === 'listening' ? void this.stopListening() : this.finish()));
     $('viAudio').addEventListener('click', () => this.listenInstead());
+    for (const r of document.querySelectorAll<HTMLInputElement>('input[name="viBy"]')) {
+      r.checked = r.value === this.by;
+      r.addEventListener('change', () => r.checked && this.setBy(r.value as VideoBy));
+    }
     $('viAnother').addEventListener('click', () => this.toSource());
     $<HTMLSelectElement>('viSpeed').addEventListener('change', (e) => (this.speed = +(e.target as HTMLSelectElement).value));
     $<HTMLSelectElement>('viMeter').addEventListener('change', (e) => {
@@ -162,15 +168,46 @@ export class VideoImportView {
   /** Buttons for the current phase. */
   private buttons(): void {
     const p = this.phase;
+    const ear = this.by === 'ear';
+    // before Recognise (or, for a shared tab, Record): the way can still be chosen
+    const choosing = p === 'ready' || (p === 'finding' && this.kind === 'tab');
     const start = $<HTMLButtonElement>('viStart');
-    start.hidden = !(p === 'ready' || (p === 'finding' && this.kind === 'tab'));
-    start.disabled = this.kind === 'tab' && !this.layout;
+    start.hidden = !choosing;
+    start.disabled = this.kind === 'tab' && !ear && !this.layout;
     start.textContent = this.kind === 'tab' ? t('video.record') : t('video.start');
-    $('viSpeedRow').hidden = !(p === 'ready' && this.kind !== 'tab');
+    $('viSpeedRow').hidden = !(p === 'ready' && this.kind !== 'tab' && !ear);
     $('viStop').hidden = p !== 'recording' && p !== 'listening';
-    $('viAudio').hidden = !(this.noKeyboard && (p === 'ready' || (p === 'finding' && this.kind === 'tab' && !this.layout)));
-    $('viSeen').hidden = !(this.layout && (p === 'recording' || p === 'finding'));
+    $('viAudio').hidden = ear || !(this.noKeyboard && (p === 'ready' || (p === 'finding' && this.kind === 'tab' && !this.layout)));
+    $('viSeen').hidden = ear || !(this.layout && (p === 'recording' || p === 'finding'));
     $('viProgressRow').hidden = !((p === 'recording' || p === 'listening') && this.kind !== 'tab');
+    $('viByRow').hidden = !choosing;
+    for (const r of document.querySelectorAll<HTMLInputElement>('input[name="viBy"]')) r.checked = r.value === this.by;
+    $('viByNote').textContent = t(ear ? 'video.by.ear.note' : 'video.by.eye.note');
+  }
+
+  /** How the video is recognised: by its sound (the default) or by the keys lighting up. */
+  private get by(): VideoBy {
+    return this.app.settings.videoBy;
+  }
+
+  private setBy(by: VideoBy): void {
+    if (by === this.by) return;
+    this.app.settings.videoBy = by;
+    saveSettings(this.app.settings);
+    if (this.phase === 'ready') this.status(this.readyText());
+    else if (this.kind === 'tab' && this.phase === 'finding') {
+      // a shared tab: look for the keyboard in it, or just wait for Record
+      if (by === 'eye') void this.watchTab(this.gen);
+      else this.status(t('video.tab.readyEar'));
+    }
+    this.buttons();
+  }
+
+  /** What to do next, for the source and the way chosen. */
+  private readyText(): string {
+    const ear = this.by === 'ear';
+    if (this.kind === 'file') return t(ear ? 'video.readyFileEar' : 'video.readyFile');
+    return t(ear ? 'video.readyEar' : 'video.ready');
   }
 
   /** Stop everything this screen started. */
@@ -243,7 +280,7 @@ export class VideoImportView {
       yt.onProblem = (p) => this.problem(p);
       yt.onState = (s) => this.onYtState(s);
       this.title = yt.title;
-      this.ready(t('video.ready'));
+      this.ready(this.readyText());
     } catch (e) {
       if (gen !== this.gen) return;
       const m = (e as Error).message;
@@ -273,7 +310,7 @@ export class VideoImportView {
       return;
     }
     v.addEventListener('ended', () => this.phase === 'recording' && this.finish());
-    this.ready(t('video.readyFile'));
+    this.ready(this.readyText());
   }
 
   /** Another tab or window: the user picks it, plays the video there, and koimidi watches. */
@@ -309,7 +346,8 @@ export class VideoImportView {
         });
         this.phase = 'finding';
         this.buttons();
-        void this.watchTab(gen);
+        if (this.by === 'eye') void this.watchTab(gen);
+        else this.status(t('video.tab.readyEar'));
       },
       () => {
         if (gen !== this.gen) return;
@@ -366,6 +404,10 @@ export class VideoImportView {
 
   /** The Recognise / Start recording button. */
   private start(): void {
+    if (this.by === 'ear') {
+      this.listenInstead();
+      return;
+    }
     if (this.kind === 'tab') {
       if (this.layout && this.tracker) this.record();
       return;
@@ -490,9 +532,9 @@ export class VideoImportView {
     this.status(t('video.tab.waiting'));
     const finder = new KeyboardFinder();
     const since = performance.now();
-    while (gen === this.gen && this.phase === 'finding') {
+    while (gen === this.gen && this.phase === 'finding' && this.by === 'eye') {
       const g = await Promise.race([this.grabber!.next(), sleep(1500).then(() => null)]);
-      if (gen !== this.gen || this.phase !== 'finding') return;
+      if (gen !== this.gen || this.phase !== 'finding' || this.by !== 'eye') return;
       const found = g ? finder.offer(g.frame, g.t) : null;
       if (found) {
         // a better reference frame may still turn up while the user has not pressed Record
@@ -647,7 +689,7 @@ export class VideoImportView {
 
   /* ---------- listening instead ---------- */
 
-  /** No lit keyboard: listen to the video. A file is read straight away; a tab is recorded while the video plays. */
+  /** By ear (the default), or when no lit keyboard was found: listen to the video. A file is read straight away; a tab is recorded while the video plays. */
   private listenInstead(): void {
     if (this.kind === 'file' && this.file) {
       const file = this.file;
@@ -869,7 +911,7 @@ export class VideoImportView {
       this.toSource();
       return;
     }
-    this.ready(kind === 'youtube' ? t('video.ready') : t('video.readyFile'));
+    this.ready(this.readyText());
   }
 }
 

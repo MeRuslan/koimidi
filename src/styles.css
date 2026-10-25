@@ -782,6 +782,10 @@ button.cell:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .vi-seen { width: 100%; height: auto; display: block; border-radius: var(--r-2); border: 1px solid var(--line); }
 .vi-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
 .vi-speed { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.vi-by { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; font-size: 14px; color: var(--ink-2); }
+.vi-by .seg { display: inline-grid; }
+.vi-by .seg span { padding: 0 14px; }
+.vi-by .fine { flex-basis: 100%; max-width: 42em; margin: 0; }
 .vi-name { display: flex; flex-direction: column; gap: 6px; width: min(720px, 100%); }
 .vi-name input { font: var(--display-weight) 22px var(--display); }
 .vi-summary { color: var(--ink-2); font-size: 14.5px; }

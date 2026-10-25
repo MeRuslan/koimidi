@@ -14,6 +14,7 @@ import { sameKeyboard, type KeyboardLayout } from '../video/keyboard';
 import { KeyTracker, playable, type RawNote } from '../video/tracker';
 import { octaveHint, toMidi, transcribe, type Transcribed } from '../video/transcribe';
 import { YouTubePlayer, YT_STATE, youTubeId, youTubeStart, type YouTubeProblem } from '../video/youtube';
+import { onThemeChange, palette } from '../theme';
 import { $, el, formatDuration } from './dom';
 
 type Kind = 'youtube' | 'file' | 'tab';
@@ -109,6 +110,9 @@ export class VideoImportView {
     addEventListener('resize', () => {
       if (!$('viResult').hidden) this.drawRoll();
     });
+    onThemeChange(() => {
+      if (!$('viResult').hidden) this.drawRoll();
+    });
     // a hidden tab gets no frames of a playing file: hold the file until the tab is back
     document.addEventListener('visibilitychange', () => {
       if (this.kind !== 'file' || !this.video || (this.phase !== 'finding' && this.phase !== 'recording')) return;
@@ -125,6 +129,7 @@ export class VideoImportView {
   /* ---------- screens ---------- */
 
   open(): void {
+    this.app.home.hide();
     $('home').hidden = true;
     $('vimport').hidden = false;
     this.toSource();
@@ -592,7 +597,7 @@ export class VideoImportView {
     const sx = w / (x1 - x0);
     const lit = new Set(this.tracker?.lit() ?? []);
     ctx.lineWidth = 2 * dpr;
-    ctx.strokeStyle = '#5fd4e8';
+    ctx.strokeStyle = palette().felt;
     for (const k of layout.keys) {
       if (!lit.has(k.pitch)) continue;
       ctx.beginPath();
@@ -793,15 +798,16 @@ export class VideoImportView {
     ctx.clearRect(0, 0, w, h);
     const x = (b: number) => (b / span) * w;
     const rowH = h / (hi - lo + 1);
+    const pal = palette();
     for (let b = 0; b <= span; b++) {
-      ctx.fillStyle = b % meter === 0 ? '#27506c' : '#132c40';
+      ctx.fillStyle = b % meter === 0 ? pal.barline : pal.octave;
       ctx.fillRect(Math.round(x(b)), 0, b % meter === 0 ? 2 * dpr : dpr, h);
     }
-    ctx.fillStyle = '#5f788c';
-    ctx.font = `${11 * dpr}px "Golos Text", system-ui, sans-serif`;
-    for (let m = 0; m < bars; m++) ctx.fillText(String(m + 1), x(m * meter) + 4 * dpr, 12 * dpr);
+    ctx.fillStyle = pal.barlabel;
+    ctx.font = `500 ${10.5 * dpr}px ${pal.mono}`;
+    for (let m = 0; m < bars; m++) ctx.fillText(String(m + 1), x(m * meter) + 4 * dpr, 13 * dpr);
     for (const n of shown) {
-      ctx.fillStyle = n.hand === 'L' ? '#8ea8ff' : '#5fd4e8';
+      ctx.fillStyle = n.hand === 'L' ? pal.fingers[4] : pal.fingers[1];
       const y = (hi - n.pitch) * rowH;
       ctx.fillRect(x(n.t) + dpr, y, Math.max(2 * dpr, x(Math.min(n.dur, span - n.t)) - 2 * dpr), Math.max(2 * dpr, rowH - dpr));
     }

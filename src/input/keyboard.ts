@@ -7,6 +7,13 @@ const KEYS: Record<string, number> = {
   KeyK: 12, KeyO: 13, KeyL: 14,
 };
 
+const LETTERS = Object.fromEntries(Object.entries(KEYS).map(([code, k]) => [k, code.slice(3)]));
+
+/** The computer key that plays a pitch with the given base, or null. */
+export function letterFor(pitch: number, base: number): string | null {
+  return LETTERS[pitch - base] ?? null;
+}
+
 export interface KeyboardHandlers {
   noteOn(pitch: number, velocity: number): void;
   noteOff(pitch: number): void;

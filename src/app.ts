@@ -9,7 +9,8 @@ import { applyEdits } from './score/edits';
 import type { Score } from './score/model';
 import { getFile, getFingerings, requestPersistence, touchFile, type FileKind } from './storage/files';
 import { loadPieceSettings, loadSettings, saveSettings, type Lang, type Settings } from './storage/settings';
-import { $, safeFileName, toast } from './ui/dom';
+import { applyTheme, type ThemeChoice } from './theme';
+import { $, el, safeFileName, toast } from './ui/dom';
 import { HomeView } from './ui/home';
 import { PracticeView } from './ui/practice';
 import { SoundSettings } from './ui/sound-settings';
@@ -33,6 +34,7 @@ export class App {
   private unlockToastShown = false;
 
   constructor() {
+    applyTheme(this.settings.theme);
     setLang(this.settings.lang === 'auto' ? detectLang() : this.settings.lang);
     this.home = new HomeView(this);
     this.practice = new PracticeView(this);
@@ -107,6 +109,12 @@ export class App {
     this.renderMidiStatus();
   }
 
+  setTheme(c: ThemeChoice): void {
+    this.settings.theme = c;
+    this.save();
+    applyTheme(c);
+  }
+
   nameStyle(): NameStyle {
     if (this.settings.noteNames !== 'auto') return this.settings.noteNames;
     return this.lang === 'ru' ? 'solfege' : 'letters';
@@ -174,9 +182,13 @@ export class App {
     pill.className = `status ${cls}`;
     pill.textContent = short;
     pill.title = full;
-    line.className = `status-line ${cls}`;
-    line.textContent = full;
+    line.className = `device ${cls}`;
+    if (s.kind === 'connected') {
+      const size = this.keyboardSize();
+      line.replaceChildren(el('span', {}, [el('b', { text: s.names.join(', ') }), size ? ` · ${keysLabel(+size)}` : '']));
+    } else line.replaceChildren(el('span', { text: full }));
     $('browserHint').hidden = s.kind !== 'unsupported';
+    this.practice.showLetters(s.kind !== 'connected');
   }
 
   /* ---------- opening pieces ---------- */
@@ -235,6 +247,7 @@ export class App {
     this.current = info;
     this.settings.lastPieceId = info.id;
     this.save();
+    this.home.hide();
     $('home').hidden = true;
     $('vimport').hidden = true;
     $('practice').hidden = false;

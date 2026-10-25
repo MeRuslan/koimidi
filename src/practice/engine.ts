@@ -120,8 +120,8 @@ export class Engine {
   private nextClick = 0;
   private acc: ScoreNote[] = [];
   private nextAcc = 0;
-  /** the note that last lit each key automatically */
-  private keyNote = new Map<number, ScoreNote>();
+  /** the note that last lit each key automatically (the keyboard takes its finger colour) */
+  readonly keyNote = new Map<number, ScoreNote>();
   private cur: PassStats | null = null;
   private idle = 0;
 

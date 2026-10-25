@@ -8,10 +8,11 @@ import type { App } from '../app';
 import { barsLabel, keysLabel, noteName, notesLabel, t } from '../i18n';
 import { AudioTake, decodeAudio, listen } from '../video/audio';
 import { canCapture, captureOther, captureThisTab, StreamGrabber, VideoGrabber, type Grabbed, type Grabber } from '../video/capture';
-import { chroma, patch, type Frame } from '../video/frame';
-import { detectKeyboard, sameKeyboard, type KeyboardLayout } from '../video/keyboard';
-import { KeyTracker, type RawNote } from '../video/tracker';
-import { toMidi, transcribe, type Transcribed } from '../video/transcribe';
+import { KeyboardFinder } from '../video/finder';
+import type { Frame } from '../video/frame';
+import { sameKeyboard, type KeyboardLayout } from '../video/keyboard';
+import { KeyTracker, playable, type RawNote } from '../video/tracker';
+import { octaveHint, toMidi, transcribe, type Transcribed } from '../video/transcribe';
 import { YouTubePlayer, YT_STATE, youTubeId, youTubeStart, type YouTubeProblem } from '../video/youtube';
 import { $, el, formatDuration } from './dom';
 
@@ -405,7 +406,8 @@ export class VideoImportView {
 
   /**
    * Find the keyboard: watch the first seconds, then look in at a few places
-   * further on (a long intro). Three sightings of the same keyboard settle it.
+   * further on (a long intro). The finder settles on a keyboard seen three
+   * times; where two show, on the one whose keys light up.
    */
   private async findAndRecord(ctl: Control, gen: number): Promise<void> {
     this.status(t('video.finding'));
@@ -413,36 +415,32 @@ export class VideoImportView {
     const d = ctl.duration();
     const probes = [this.linkStart];
     if (d - this.linkStart > 30) probes.push(...[0.15, 0.35, 0.55, 0.75].map((f) => this.linkStart + (d - this.linkStart) * f));
-    const seen: (Grabbed & { layout: KeyboardLayout; lit: number })[] = [];
+    const finder = new KeyboardFinder();
     let foundAtProbe = -1;
+    const take = (found: { layout: KeyboardLayout; calib: Frame; t: number } | null, i: number) => {
+      if (!found) return false;
+      this.layout = found.layout;
+      this.calib = { frame: found.calib, t: found.t };
+      this.foundAt = ctl.time();
+      foundAtProbe = i;
+      return true;
+    };
     for (let i = 0; i < probes.length && foundAtProbe < 0; i++) {
       ctl.seek(probes[i]);
       this.play(ctl);
-      // the first look lasts a few seconds of video; the others just long enough for a few frames
-      const span = i === 0 ? 6 : 1.5;
-      const wallLimit = performance.now() + (i === 0 ? 15000 : 8000);
+      // the first look lasts a few seconds of video (longer while two keyboards are in sight and
+      // neither has lit up yet); the others just long enough for a few frames
+      const span = () => (i === 0 ? (finder.rivalry ? 14 : 6) : 1.5);
+      const wallLimit = performance.now() + (i === 0 ? 30000 : 8000);
       if (i > 0) await sleep(500);
       while (gen === this.gen && performance.now() < wallLimit) {
         const g = await Promise.race([this.grabber!.next(), sleep(2000).then(() => null)]);
         if (gen !== this.gen) return;
-        if (g) {
-          const layout = detectKeyboard(g.frame);
-          if (layout) {
-            seen.push({ ...g, layout, lit: litCount(g.frame, layout) });
-            const same = seen.filter((x) => sameKeyboard(x.layout, layout));
-            if (same.length >= 3) {
-              const calm = same.reduce((x, y) => (y.lit < x.lit ? y : x));
-              this.layout = calm.layout;
-              this.calib = calm;
-              this.foundAt = ctl.time();
-              foundAtProbe = i;
-              break;
-            }
-          }
-        }
-        if (ctl.ended() || ctl.time() > probes[i] + span || (d && ctl.time() > d - 0.5)) break;
+        if (g && take(finder.offer(g.frame, g.t), i)) break;
+        if (ctl.ended() || ctl.time() > probes[i] + span() || (d && ctl.time() > d - 0.5)) break;
         await sleep(200);
       }
+      if (foundAtProbe < 0) take(finder.settle(), i);
     }
     if (gen !== this.gen) return;
     if (foundAtProbe < 0) {
@@ -485,25 +483,21 @@ export class VideoImportView {
   /** Tab: look at the shared tab until the keyboard is there. */
   private async watchTab(gen: number): Promise<void> {
     this.status(t('video.tab.waiting'));
-    let streak: KeyboardLayout | null = null;
-    let count = 0;
+    const finder = new KeyboardFinder();
     const since = performance.now();
     while (gen === this.gen && this.phase === 'finding') {
       const g = await Promise.race([this.grabber!.next(), sleep(1500).then(() => null)]);
       if (gen !== this.gen || this.phase !== 'finding') return;
-      const layout = g ? detectKeyboard(g.frame) : null;
-      if (g && layout) {
-        count = streak && sameKeyboard(streak, layout) ? count + 1 : 1;
-        streak = layout;
-        // the calmest frame so far is the reference for unlit keys
-        const lit = litCount(g.frame, layout);
-        if (count >= 2 && (!this.layout || !sameKeyboard(this.layout, layout) || lit < litCount(this.calib!.frame, this.layout))) {
-          this.layout = layout;
-          this.calib = g;
-          this.tracker = new KeyTracker(layout, g.frame);
+      const found = g ? finder.offer(g.frame, g.t) : null;
+      if (found) {
+        // a better reference frame may still turn up while the user has not pressed Record
+        if (!this.layout || !sameKeyboard(this.layout, found.layout) || this.calib?.frame !== found.calib) {
+          this.layout = found.layout;
+          this.calib = { frame: found.calib, t: found.t };
+          this.tracker = new KeyTracker(found.layout, found.calib);
           this.grabber!.band = this.tracker.band;
           this.grabber!.onFrame = (band, _t, top) => (this.lastBand = { frame: band, top });
-          this.status(t('video.tab.ready', { keys: keysLabel(layout.keys.length) }), 'ok');
+          this.status(t('video.tab.ready', { keys: keysLabel(found.layout.keys.length) }), 'ok');
           this.buttons();
           this.startLive();
         }
@@ -623,16 +617,19 @@ export class VideoImportView {
   private showResult(raw: RawNote[]): void {
     this.raw = raw;
     if (this.yt) this.title = this.yt.title || this.title;
-    if (this.raw.length < 4) {
+    if (this.raw.length < 4 || (!this.fromAudio && !playable(this.raw))) {
+      // a keyboard was there but its keys did not light up as notes do (a filmed piano, hands over the keys)
       this.phase = 'ready';
       this.tracker = null;
-      this.status(t('video.fewNotes'), 'warn');
+      this.noKeyboard = this.raw.length >= 4;
+      this.status(this.raw.length < 4 ? t('video.fewNotes') : `${t('video.noLitKeys')} ${t('video.audio.hint')}`, 'warn');
       this.buttons();
       return;
     }
     this.phase = 'done';
     $('viDraft').hidden = !this.fromAudio;
-    this.octave = 0;
+    // a close-up keyboard does not say its octave: start from where the piece's register says it sits
+    this.octave = this.layout && !this.layout.octaveSure && !this.fromAudio ? octaveHint(transcribe(raw).notes) : 0;
     this.shift = 0;
     this.meter = 'auto';
     $<HTMLSelectElement>('viMeter').value = 'auto';
@@ -870,9 +867,3 @@ export class VideoImportView {
   }
 }
 
-/** Keys that look lit in a frame: few means a calm frame, the best reference for unlit keys. */
-function litCount(f: Frame, layout: KeyboardLayout): number {
-  let n = 0;
-  for (const k of layout.keys) if (chroma(patch(f, k.x, k.y, 1)) > 40) n++;
-  return n;
-}

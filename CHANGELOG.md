@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.5.1 — 2026-10-25
+
+Pieces from videos: a held-out check on 34 tutorials from other channels (Rutube and Dailymotion mirrors of PlutaX, PHianonize, Sheet Music Boss, Betacustic, Toms Mucenieks, Piano Tutorial Easy, OnlinePianist, PianoKafe and others, two keyboard-with-sheet-music renderers, three glow visualisers, a vertical short and five filmed pianos) showed the recognition tuned to the two videos it was built on. Reworked to take more from the video itself and fewer fixed numbers. Over the 28 videos where a lit keyboard was found, the melody notes found went from 54% to 85%, wrong notes from 5% to 2%, extra notes from 6% to 3%, the rhythm of neighbouring notes from 60% to 89% and the bar lines from 34% to 62%; two of the filmed pianos are now told apart and sent to listening by ear.
+
+- Keys are judged against their resting colour over the whole video (a median), not against one calibration frame: videos that fade in, or open on a title over the keys, lost almost every note before
+- How far a key's colour must stray to count as a press comes from the point's own noise, capped by what points of its kind need; a change that only darkens a key (a shadow, a caption, a fade) never counts
+- The falling bars always help split repeated notes: a bar's landing is trusted only while its bottom keeps coming down at the measured speed (a glow where bars land, or a letter printed low on a bar, stands still), and cuts keep clear of a note's ends by the lag this video shows between a bar landing and the key lighting
+- The keyboard: every row of black keys in the frame is a candidate (a drawn keyboard above a filmed one), a label across the black keys no longer ends them, a keyboard's white keys end above the next dark shapes after a white run, and a pattern with dark shapes in the E–F and B–C gaps is not a keyboard (digits in a caption were)
+- Choosing between keyboards: the one whose keys light up vividly, never the one right under another; the reference frame is the brightest calm sighting
+- Hands by colour: the two hues come from the peaks of the hue histogram weighted by saturation (two colours used to collapse into one), and two hues that also sit in two registers are two hands even when a little loose
+- Time: the tatum (the finest pulse the notes sit on) is read from the gaps between onsets, corrected for what a short period explains by chance; the bar is chosen among the usual lengths in tatums by repetition and accents, and written as the reading whose quarter note is near half a second (4/4 slightly preferred, 2/4 and 3/8 slightly not, 6/8, 9/8 and 12/8 when accents fall in threes). A slow tutorial is written slow; nothing presumes 100 bpm any more
+- A close-up keyboard that does not say its octave starts from the octave the piece's register suggests (left hand around the C below middle C)
+- Notes that could not have been played — more than ten at once, a dozen a second, or a note starting while two of its nearest neighbours are down (hands over a filmed piano) — are not a piece: the app says the keys do not light up and offers to listen instead
+- `scripts/bench-video.mjs`: the recognition on a video file against a library piece (ffmpeg; melody found, wrong and extra notes, hands, rhythm, bar lines), on a manifest of videos, with before/after comparison; videos never enter the repository
+
 ## v0.5.0 — 2026-10-25
 
 Pieces from videos.

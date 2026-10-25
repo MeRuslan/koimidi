@@ -6,7 +6,7 @@ import { beatsToSeconds, type Score } from '../src/score/model';
 import type { Frame } from '../src/video/frame';
 import { detectKeyboard } from '../src/video/keyboard';
 import { syntheticVideo, type SynthNote, type SynthOptions } from '../src/video/synthetic';
-import { KeyTracker, type RawNote } from '../src/video/tracker';
+import { KeyTracker, playable, type RawNote } from '../src/video/tracker';
 import { guessMeter, handsByColor, toMidi, transcribe, type OnsetInBeats } from '../src/video/transcribe';
 import { youTubeId, youTubeStart } from '../src/video/youtube';
 
@@ -228,6 +228,17 @@ function mode(xs: number[]): number {
   return [...c.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
 }
 
+describe('playable notes', () => {
+  it('takes a piece for playable and hands over a filmed piano for not', () => {
+    const piece = synthNotes(libraryScore('ode-to-joy'), 0.9).map((n) => ({ pitch: n.pitch, on: n.on, off: n.off, color: [126, 226, 132] as [number, number, number] }));
+    expect(playable(piece)).toBe(true);
+    // a hand: five neighbouring keys "pressed" together, moving along the keyboard every second
+    const hands: RawNote[] = [];
+    for (let t = 0; t < 60; t++) for (let k = 0; k < 5; k++) hands.push({ pitch: 48 + (t % 12) + k, on: t + k * 0.01, off: t + 0.9, color: [200, 160, 130] });
+    expect(playable(hands)).toBe(false);
+  });
+});
+
 describe('hands by colour', () => {
   it('one hue in a light and a dark shade is one hand (white and black keys lit differently)', () => {
     const light: [number, number, number] = [181, 255, 72];
@@ -271,7 +282,7 @@ describe('transcription', () => {
     });
   }
 
-  it('writes a piece whose beats split in three in compound time (12/8), not as triplets in 4/4', () => {
+  it('writes a piece whose beats split in three in compound time (6/8 or 12/8), not as triplets in 4/4', () => {
     // long-short (two eighths and one) three times, then a dotted quarter; an eighth is a third of a second
     const fig: [number, number][] = [[72, 2], [74, 1], [72, 2], [76, 1], [74, 2], [72, 1], [71, 3]];
     const raw: RawNote[] = [];
@@ -284,9 +295,11 @@ describe('transcription', () => {
       }
     }
     const tr = transcribe(raw);
-    expect(tr.timeSig).toEqual([12, 8]);
+    // the figure fills twelve eighths and nothing marks its middle: one bar of 12/8 or two of 6/8
+    expect(tr.timeSig[1]).toBe(8);
+    expect([6, 12]).toContain(tr.timeSig[0]);
     expect(tr.bpm).toBeCloseTo(90, 0);
-    expect(tr.measures).toBe(6);
+    expect(tr.measures).toBe(tr.timeSig[0] === 12 ? 6 : 12);
     // a quarter and an eighth, in quarter notes
     expect(tr.notes.slice(0, 4).map((n) => [n.t, n.dur].map((x) => Math.round(x * 24) / 24))).toEqual([[0, 1], [1, 0.5], [1.5, 1], [2.5, 0.5]]);
   });

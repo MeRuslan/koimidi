@@ -63,6 +63,8 @@ The site must be served over `https://` or opened from `localhost` / a local fil
 
 A video that does not play outside YouTube, or one on another site: open it in another tab and choose **Video in another tab**. A file on your computer: **Video file**, or drop it on the page.
 
+What works: Synthesia-style renderers of most kinds (keys lit whole or in part, letters on the keys and on the bars, a drawn keyboard above a filmed one, fades and title cards, slow tutorials). What does not: a filmed piano whose keys do not light up (koimidi says so and offers to listen instead), and glow-only visualisers where the keys stay dark.
+
 Shortcuts: `Space` start/pause · `Enter` restart · `[` `]` loop start/end at the current bar · `Z` `X` shift the computer-keyboard octave · `1`–`5` finger for the selected bar · `Esc` back to the library.
 
 ## Privacy
@@ -76,6 +78,7 @@ npm install
 npm run dev        # http://localhost:5173
 npm test           # vitest: parsers, MusicXML export, fingering, practice engine, progress, recorder, library, video recognition
 npm run build      # type-check + production build into dist/
+node scripts/bench-video.mjs video.mp4 --piece ode-to-joy   # the video recognition against a library piece (needs ffmpeg)
 ```
 
 Plain TypeScript + Vite, no UI framework. Layout of `src/`:

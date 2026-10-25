@@ -4,16 +4,19 @@
  * video time with the colour they were lit in, which is the hand in most videos.
  *
  * Every frame's colours are kept (a few hundred bytes a frame), and the notes
- * are worked out at the end against each key's usual colour over the whole
- * video: letters, logos and shading drawn on the keys never count as a press.
- * A white key is watched in two places, low and high between its black
- * neighbours, since some videos light only one of them.
+ * are worked out at the end from the video as a whole: each point's resting
+ * colour is its median over the frames that show the keyboard, how far a
+ * colour has to stray to count as a press comes from that point's own noise,
+ * and a change that only darkens a key (a shadow, a caption, a fade) is never
+ * a press. The calibration frame only feeds the live preview. A white key is
+ * watched in two places, low and high between its black neighbours, since
+ * some videos light only one of them.
  *
  * A key held across two notes of the same pitch stays lit, so the tracker also
  * watches the falling bars just above the keys: the gap between two bars,
  * moving down at the speed of the bars, says when the second note starts.
  */
-import { chroma, dist, patch, type Frame, type RGB } from './frame';
+import { chroma, dist, luma, patch, type Frame, type RGB } from './frame';
 import type { KeyboardLayout } from './keyboard';
 
 export interface RawNote {
@@ -29,29 +32,44 @@ interface Point {
   key: number;
   x: number;
   y: number;
+  black: boolean;
 }
 
-/** Litness above which a key turns on, and below which it turns off again. */
-const ON = 1;
-const OFF = 0.65;
-/** A frame where more keys than this share light up at once is a fade, a cut or something drawn over the video. */
+/** A frame where more keys than this share look pressed at once is a fade, a cut or something drawn over the video. */
 const AWAY = 0.35;
 /** Seconds without a view of the keyboard after which held keys count as released. */
 const HOLE = 0.5;
+/** Below this, in colour units, a change is never a press (compression noise on a clean video is about 5). */
+const FLOOR = 28;
+/** Off again at this share of the on threshold. */
+const HYSTERESIS = 0.65;
 /** A falling bar is vivid and bright, whatever is behind it (a plain colour or a dimmed picture). */
 function isBar(r: number, g: number, b: number): boolean {
   return Math.max(r, g, b) - Math.min(r, g, b) >= 50 && 0.299 * r + 0.587 * g + 0.114 * b >= 60;
 }
 
-function litness(c: RGB, base: RGB): number {
-  return Math.max(dist(c, base) / 70, (chroma(c) - chroma(base)) / 50);
+/**
+ * How much a colour has moved from a key's resting colour, as a press would
+ * move it: gaining colour or light. A darker shade of the same colour is a
+ * shadow, a caption or a fade, and counts for nothing.
+ */
+export function change(c: RGB, rest: RGB): number {
+  const dc = chroma(c) - chroma(rest);
+  if (dc <= 10 && luma(...c) < luma(...rest)) return 0;
+  // the chroma term: a pale tint on a white key moves little in RGB
+  return Math.max(dist(c, rest), 1.4 * dc);
+}
+
+/** A white key at rest is bright and at most faintly coloured (cream, ivory), as the detector sees it; a black key is dark. */
+function restingLike(c: RGB, black: boolean): boolean {
+  return black ? luma(...c) < 110 : luma(...c) >= 130 && chroma(c) <= 60;
 }
 
 export class KeyTracker {
   private points: Point[] = [];
   /** Per key, its points. */
   private pointsOf: number[][];
-  /** Each point's colour in the calibration frame: the reference while recording. */
+  /** Each point's resting colour for the live preview: the calibration frame, then the first seconds. */
   private base: RGB[];
   /** While recording: which keys look lit, and how many presses so far (the final count comes from finish). */
   private liveLit: boolean[];
@@ -83,8 +101,8 @@ export class KeyTracker {
     this.r = Math.max(1, Math.min(3, Math.round(layout.whiteWidth * 0.12)));
     this.laneH = Math.max(0, Math.min(Math.floor(layout.top) - 1, Math.max(16, Math.round(layout.height * 0.18))));
     this.pointsOf = layout.keys.map((k, key) => {
-      const ids = [this.points.push({ key, x: k.x, y: k.y }) - 1];
-      if (k.x2 !== undefined && k.y2 !== undefined) ids.push(this.points.push({ key, x: k.x2, y: k.y2 }) - 1);
+      const ids = [this.points.push({ key, x: k.x, y: k.y, black: k.black }) - 1];
+      if (k.x2 !== undefined && k.y2 !== undefined) ids.push(this.points.push({ key, x: k.x2, y: k.y2, black: k.black }) - 1);
       return ids;
     });
     this.base = this.points.map((p) => patch(calibration, p.x, p.y - calibrationY0, this.r));
@@ -125,6 +143,33 @@ export class KeyTracker {
     this.laneStart = start < this.laneH * 0.5 ? start : 0;
   }
 
+  /** Per-channel medians of the frames so far (the last `count` of them, or all). */
+  private mediansOf(frames: number[]): RGB[] {
+    const P = this.points.length;
+    const hist = new Uint32Array(256 * 3);
+    const out: RGB[] = [];
+    for (let i = 0; i < P; i++) {
+      hist.fill(0);
+      for (const f of frames) {
+        const row = this.colors[f];
+        hist[row[i * 3]]++;
+        hist[256 + row[i * 3 + 1]]++;
+        hist[512 + row[i * 3 + 2]]++;
+      }
+      out.push(
+        [0, 1, 2].map((ch) => {
+          let acc = 0;
+          for (let v = 0; v < 256; v++) {
+            acc += hist[ch * 256 + v];
+            if (acc * 2 >= frames.length) return v;
+          }
+          return 255;
+        }) as RGB,
+      );
+    }
+    return out;
+  }
+
   /** Feed one frame: the whole frame, or the band from `band` starting at row y0. `t` is its video time in seconds. */
   push(f: Frame, t: number, y0 = 0): void {
     this.frames++;
@@ -138,18 +183,32 @@ export class KeyTracker {
     });
     this.colors.push(row);
     this.times.push(t);
-    // the preview: lit against the calibration frame
-    const keyLit = this.pointsOf.map((ids) => Math.max(...ids.map((i) => litness([row[i * 3], row[i * 3 + 1], row[i * 3 + 2]], this.base[i]))));
-    if (keyLit.filter((v) => v > ON).length <= keyLit.length * AWAY) {
+    // the preview: against the calibration frame at first, then against the first seconds of the video
+    // (a video that fades in, or opens on a title over the keys, makes a poor calibration frame)
+    if (this.frames === 45 || this.frames === 150) {
+      const all = this.colors.map((_, i) => i);
+      const med = this.mediansOf(all);
+      this.base = med.map((m, i) => (restingLike(m, this.points[i].black) ? m : this.base[i]));
+    }
+    const keyLit = this.pointsOf.map((ids) => Math.max(...ids.map((i) => change([row[i * 3], row[i * 3 + 1], row[i * 3 + 2]], this.base[i]))));
+    const on = FLOOR * 1.5;
+    if (!this.isAway((i) => [row[i * 3], row[i * 3 + 1], row[i * 3 + 2]], this.base)) {
       keyLit.forEach((v, k) => {
-        if (!this.liveLit[k] && v > ON) {
+        if (!this.liveLit[k] && v > on) {
           this.liveLit[k] = true;
           this.presses++;
-        } else if (this.liveLit[k] && v < OFF) this.liveLit[k] = false;
+        } else if (this.liveLit[k] && v < on * HYSTERESIS) this.liveLit[k] = false;
       });
     }
     if (this.laneStart) this.watchLanes(f, t, y0);
     this.lastT = t;
+  }
+
+  /** The keyboard is not showing as it usually does: more keys than a pair of hands could press look different. */
+  private isAway(colorOf: (i: number) => RGB, rest: RGB[]): boolean {
+    let moved = 0;
+    for (const ids of this.pointsOf) if (Math.max(...ids.map((i) => dist(colorOf(i), rest[i]))) > FLOOR * 1.5) moved++;
+    return moved > this.pointsOf.length * AWAY;
   }
 
   private watchLanes(f: Frame, t: number, y0: number): void {
@@ -268,10 +327,10 @@ export class KeyTracker {
   }
 
   /**
-   * Stop and work out the notes: each point's usual colour is its median over
-   * the frames that show the keyboard; a key is lit while any of its points
-   * strays from that. Then held repeats are split and keys that never went
-   * dark are dropped.
+   * Stop and work out the notes. Each point's resting colour is its median
+   * over the frames that show the keyboard, and how far a colour must stray
+   * to count as a press comes from the point's own noise. Then held repeats
+   * are split by the bars, and keys that never went dark are dropped.
    */
   finish(): RawNote[] {
     const n = this.colors.length;
@@ -281,40 +340,53 @@ export class KeyTracker {
       const r = this.colors[f];
       return [r[i * 3], r[i * 3 + 1], r[i * 3 + 2]];
     };
-    // frames where the keyboard is not showing (title cards, fades), by the calibration colours
+    const all = this.colors.map((_, i) => i);
+    // 1. resting colours over the whole video, then the frames that do not show the keyboard as it
+    // usually looks (title cards, fades, something drawn over it), then the resting colours again without them
     const away = new Uint8Array(n);
-    for (let f = 0; f < n; f++) {
-      let lit = 0;
-      for (const ids of this.pointsOf) if (Math.max(...ids.map((i) => litness(at(f, i), this.base[i]))) > ON) lit++;
-      if (lit > this.pointsOf.length * AWAY) away[f] = 1;
+    let rest = this.mediansOf(all);
+    const markAway = () => {
+      for (let f = 0; f < n; f++) away[f] = this.isAway((i) => at(f, i), rest) ? 1 : 0;
+    };
+    markAway();
+    const shown = all.filter((f) => !away[f]);
+    if (shown.length) {
+      rest = this.mediansOf(shown);
+      markAway();
     }
     this.skipped = away.reduce((a, v) => a + v, 0);
-    // each point's usual colour: per-channel medians from histograms
-    const usual: RGB[] = [];
-    const hist = new Uint32Array(256 * 3);
-    let shown = 0;
-    for (let f = 0; f < n; f++) if (!away[f]) shown++;
+    // a key lit most of the video would make its lit colour the resting one: such a point rests like its kind
+    const kind = (black: boolean) => {
+      const same = rest.filter((c, i) => this.points[i].black === black && restingLike(c, black));
+      return same.length ? (median3(same) as RGB) : null;
+    };
+    const typical = { white: kind(false), black: kind(true) };
+    rest = rest.map((c, i) => {
+      const p = this.points[i];
+      if (restingLike(c, p.black)) return c;
+      if (restingLike(this.base[i], p.black)) return this.base[i];
+      return (p.black ? typical.black : typical.white) ?? c;
+    });
+    // 2. how far a point strays at rest: its median change and spread over the frames shown. A key lit
+    // most of the time, or one that hands keep passing over, strays far on its own, so no point may
+    // ask for more than the points of its kind (black keys, the lower and the upper part of white keys)
+    // typically do
+    const frames = shown.length ? shown : all;
+    const ds = new Float32Array(frames.length);
+    const own = new Float32Array(P);
+    const byKind: number[][] = [[], [], []];
+    const kindOf = (i: number) => (this.points[i].black ? 0 : this.pointsOf[this.points[i].key][0] === i ? 1 : 2);
     for (let i = 0; i < P; i++) {
-      hist.fill(0);
-      for (let f = 0; f < n; f++) {
-        if (away[f]) continue;
-        const r = this.colors[f];
-        hist[r[i * 3]]++;
-        hist[256 + r[i * 3 + 1]]++;
-        hist[512 + r[i * 3 + 2]]++;
-      }
-      const med = [0, 1, 2].map((ch) => {
-        let acc = 0;
-        for (let v = 0; v < 256; v++) {
-          acc += hist[ch * 256 + v];
-          if (acc * 2 >= shown) return v;
-        }
-        return 255;
-      }) as RGB;
-      // a key held down most of the video would make its lit colour the usual one: keep a plain calibration colour then
-      usual.push(shown && !(chroma(med) > 40 && chroma(this.base[i]) < 25) ? med : this.base[i]);
+      frames.forEach((f, k) => (ds[k] = change(at(f, i), rest[i])));
+      const sorted = Float32Array.from(ds).sort();
+      const med = sorted[sorted.length >> 1];
+      for (let k = 0; k < sorted.length; k++) sorted[k] = Math.abs(sorted[k] - med);
+      own[i] = med + 8 * Float32Array.from(sorted).sort()[sorted.length >> 1];
+      byKind[kindOf(i)].push(own[i]);
     }
-    // the notes, key by key, with hysteresis. A short stretch away from the keyboard (a fade) changes
+    const pooled = byKind.map((xs) => median(xs));
+    const onAt = this.points.map((_, i) => Math.max(FLOOR, Math.min(own[i], pooled[kindOf(i)])));
+    // 3. the notes, key by key, with hysteresis. A short stretch away from the keyboard (a fade) changes
     // nothing; after a longer one, or a hole in the frames (the video stalled), held keys are let go
     const notes: RawNote[] = [];
     this.pointsOf.forEach((ids, k) => {
@@ -337,7 +409,7 @@ export class KeyTracker {
         let bestC: RGB = [0, 0, 0];
         for (const i of ids) {
           const c = at(f, i);
-          const v = litness(c, usual[i]);
+          const v = change(c, rest[i]) / onAt[i];
           if (v > best) {
             best = v;
             bestC = c;
@@ -345,12 +417,12 @@ export class KeyTracker {
         }
         // halfway since the frame before, unless there was a hole
         const t = f && this.times[f] - this.times[f - 1] <= HOLE ? (this.times[f - 1] + this.times[f]) / 2 : this.times[f];
-        if (!lit && best > ON) {
+        if (!lit && best > 1) {
           lit = true;
           on = t;
           sum = [0, 0, 0];
           cnt = 0;
-        } else if (lit && best < OFF) {
+        } else if (lit && best < HYSTERESIS) {
           lit = false;
           close(t);
         }
@@ -363,12 +435,12 @@ export class KeyTracker {
       }
       if (lit) close(seen);
     });
-    // a video that darkens the key between two presses of it needs no help from the bars: there, the
-    // labels and rounded ends on the bars would only look like gaps
-    let out = lightGaps(notes) >= 3 ? notes : this.splitRepeats(notes);
+    // 4. a key held across two notes of the same pitch: split where the next bar reaches the key
+    let out = this.splitRepeats(notes);
     // where presses light up in colour, a key gone grey is a caption or a logo passing over it, not a press
-    const vivid = (x: RawNote) => chroma(x.color) >= 40;
-    if (out.filter(vivid).length >= out.length * 0.8) out = out.filter((x) => chroma(x.color) >= 20);
+    const chromas = out.map((x) => chroma(x.color)).sort((a, b) => a - b);
+    const typicalChroma = chromas[chromas.length >> 1] ?? 0;
+    if (typicalChroma >= 40) out = out.filter((x) => chroma(x.color) >= typicalChroma * 0.3);
     const span = this.lastT - this.firstT;
     if (span > 10) {
       const held = new Map<number, number>();
@@ -381,21 +453,28 @@ export class KeyTracker {
   private splitRepeats(notes: RawNote[]): RawNote[] {
     const v = this.speed;
     if (!v) return notes;
+    const frame = this.times.length > 1 ? (this.times[this.times.length - 1] - this.times[0]) / (this.times.length - 1) : 1 / 30;
     const starts = new Map<number, number[]>();
     this.layout.keys.forEach((k, i) => {
       const s = this.bottoms[i];
-      // [arrival time, height above the keys]
-      const ps: [number, number][] = [];
-      for (let j = 0; j < s.length; j += 2) ps.push([s[j] + s[j + 1] / v, s[j + 1]]);
+      // [arrival time, height above the keys, time seen]
+      const ps: [number, number, number][] = [];
+      for (let j = 0; j < s.length; j += 2) ps.push([s[j] + s[j + 1] / v, s[j + 1], s[j]]);
       ps.sort((a, b) => a[0] - b[0]);
-      // a moving bar gives the same arrival time frame after frame; anything standing still drifts.
-      // The bar's last sightings, closest to the keys, give the time best.
+      // a moving bar gives the same arrival time frame after frame, its bottom getting lower all the
+      // while; anything standing still (a glow where the bars land, a letter printed low on a bar)
+      // drifts, and its height stays. The bar's last sightings, closest to the keys, give the time best.
       const out: number[] = [];
-      let g: [number, number][] = [];
+      let g: [number, number, number][] = [];
       const flush = () => {
         if (g.length >= 4 && g[g.length - 1][0] - g[0][0] <= 0.08) {
-          const near = [...g].sort((a, b) => a[1] - b[1]).slice(0, 2);
-          out.push(near.reduce((sum, p) => sum + p[0], 0) / near.length);
+          const byTime = [...g].sort((a, b) => a[2] - b[2]);
+          const dropped = byTime[0][1] - byTime[byTime.length - 1][1];
+          const expected = (byTime[byTime.length - 1][2] - byTime[0][2]) * v;
+          if (dropped >= Math.max(3, 0.5 * expected)) {
+            const near = [...g].sort((a, b) => a[1] - b[1]).slice(0, 2);
+            out.push(near.reduce((sum, p) => sum + p[0], 0) / near.length);
+          }
         }
         g = [];
       };
@@ -406,31 +485,75 @@ export class KeyTracker {
       flush();
       starts.set(k.pitch, out);
     });
+    // a bar arriving around a note's start is the note's own bar: how late after the key lights it
+    // is seen to arrive, in this video, says how far from a note's ends a cut must keep (the keys
+    // may light a little before the bar lands, and the speed is measured, not known)
+    const lags: number[] = [];
+    for (const x of notes) {
+      const own = (starts.get(x.pitch) ?? []).filter((p) => Math.abs(p - x.on) <= 0.3);
+      if (own.length) lags.push(own.reduce((b, p) => (Math.abs(p - x.on) < Math.abs(b - x.on) ? p : b)) - x.on);
+    }
+    const lagMed = median(lags);
+    const lagMad = median(lags.map((l) => Math.abs(l - lagMed)));
+    const margin = Math.min(0.25, Math.max(2 * frame, 0.04, lagMed + 4 * lagMad + frame));
     const out: RawNote[] = [];
-    for (const n of notes) {
-      // not right at either end of a note, where bars carry labels and rounded corners
-      const cuts = (starts.get(n.pitch) ?? []).filter((p) => p > n.on + 0.15 && p < n.off - 0.15);
-      let on = n.on;
+    for (const x of notes) {
+      const cuts = (starts.get(x.pitch) ?? []).filter((p) => p > x.on + margin && p < x.off - margin);
+      let on = x.on;
       for (const c of cuts) {
-        out.push({ ...n, on, off: c - 0.01 });
+        out.push({ ...x, on, off: c - 0.01 });
         on = c;
       }
-      out.push({ ...n, on });
+      out.push({ ...x, on });
     }
     return out;
   }
 }
 
-/** Presses of one key that follow each other after a short dark gap (under 0.15 s). */
-function lightGaps(notes: RawNote[]): number {
-  const last = new Map<number, number>();
-  let n = 0;
-  for (const x of [...notes].sort((a, b) => a.on - b.on)) {
-    const off = last.get(x.pitch);
-    if (off !== undefined && x.on - off > 0 && x.on - off < 0.15) n++;
-    last.set(x.pitch, x.off);
+/**
+ * Whether the notes could have been played: two hands press at most ten keys
+ * at once, a piece has at most a dozen notes a second, and a note seldom
+ * starts while two of its nearest neighbours are down. Hands moving over a
+ * filmed piano, or effects drawn across the keys, break all three.
+ */
+export function playable(notes: RawNote[]): boolean {
+  if (notes.length < 20) return true;
+  const span = Math.max(...notes.map((n) => n.off)) - Math.min(...notes.map((n) => n.on));
+  if (notes.length / Math.max(1, span) > 15) return false;
+  // hands cover runs of neighbouring keys; chords rarely hold two keys within a whole tone of a new note
+  const byOn = [...notes].sort((a, b) => a.on - b.on);
+  let crowded = 0;
+  for (let i = 0; i < byOn.length; i++) {
+    const n = byOn[i];
+    let near = 0;
+    for (let j = 0; j < byOn.length && byOn[j].on <= n.on + 0.05; j++) {
+      const m = byOn[j];
+      if (m !== n && Math.abs(m.pitch - n.pitch) <= 2 && m.off > n.on) near++;
+    }
+    if (near >= 2) crowded++;
   }
-  return n;
+  if (crowded > notes.length * 0.25) return false;
+  // how many keys are down at once, sampled every 100 ms
+  const events: [number, number][] = [];
+  for (const n of notes) events.push([n.on, 1], [n.off, -1]);
+  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const poly: number[] = [];
+  let down = 0;
+  let next = events[0][0];
+  for (const [t, d] of events) {
+    while (next < t) {
+      poly.push(down);
+      next += 0.1;
+    }
+    down += d;
+  }
+  poly.sort((a, b) => a - b);
+  return (poly[Math.floor(poly.length * 0.9)] ?? 0) < 8;
+}
+
+/** Per-channel median of colours. */
+function median3(cs: RGB[]): RGB {
+  return [0, 1, 2].map((ch) => median(cs.map((c) => c[ch]))) as RGB;
 }
 
 export function median(xs: number[]): number {

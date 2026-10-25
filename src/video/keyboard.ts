@@ -243,8 +243,13 @@ function separatorPhase(f: Frame, y: number, a: number, b: number, w: number): {
   return { at, strength };
 }
 
-/** Find the keyboard in a frame, or null when there is none. */
+/** The keyboard in a frame (the one with the most black keys seen), or null when there is none. */
 export function detectKeyboard(f: Frame): KeyboardLayout | null {
+  return detectKeyboards(f)[0] ?? null;
+}
+
+/** Every keyboard-like thing in a frame, the most convincing first: some videos show a drawn keyboard above a filmed one. */
+export function detectKeyboards(f: Frame): KeyboardLayout[] {
   const H = f.height;
   // 1. bands of rows that are mostly white: the lower part of the white keys
   const frac = new Float32Array(H);
@@ -256,16 +261,25 @@ export function detectKeyboard(f: Frame): KeyboardLayout | null {
     if (last && y - last.b <= 2) last.b = y;
     else bands.push({ a: y, b: y });
   }
-  let best: KeyboardLayout | null = null;
+  const found: KeyboardLayout[] = [];
   for (const band of bands) {
     if (band.b - band.a < 1) continue;
-    const found = keyboardAbove(f, band);
-    if (found && (!best || found.blackSeen > best.blackSeen)) best = found;
+    found.push(...keyboardsIn(f, band));
   }
-  return best;
+  return found.sort((a, b) => b.blackSeen - a.blackSeen);
 }
 
-function keyboardAbove(f: Frame, band: Run): KeyboardLayout | null {
+interface Zone {
+  lo: number;
+  hi: number;
+  size: number;
+}
+
+/**
+ * The keyboards in a band of white rows: one per row of black keys. A video
+ * may show a drawn keyboard above a filmed one, both white, as one band.
+ */
+function keyboardsIn(f: Frame, band: Run): KeyboardLayout[] {
   const W = f.width;
   // the band holds the white keys from top to bottom; its whitest rows (no black keys, no letters) give its extent
   const rows: { y: number; fr: number }[] = [];
@@ -276,37 +290,81 @@ function keyboardAbove(f: Frame, band: Run): KeyboardLayout | null {
     const e = whiteExtent(f, y);
     if (e && (!ext || e.b - e.a > ext.b - ext.a)) ext = e;
   }
-  if (!ext || ext.b - ext.a < Math.max(80, W * 0.15)) return null;
+  if (!ext || ext.b - ext.a < Math.max(80, W * 0.15)) return [];
   const span = ext.b - ext.a;
   // 2. the rows with the most black keys, inside the band or just above it
   const limit = Math.max(12, Math.round((band.b - band.a) * 0.5), Math.round(f.height * 0.06));
-  const scores: { y: number; n: number; w: number }[] = [];
+  const scores: RowScore[] = [];
   for (let y = band.b; y >= Math.max(0, band.a - limit); y--) {
     if (rowWhiteFraction(f, y, ext.a, ext.b) < 0.25) {
-      scores.push({ y, n: 0, w: 0 });
+      scores.push({ y, n: 0, w: 0, cs: [] });
       continue;
     }
     const runs = consistent(darkRuns(f, y, ext.a, ext.b, span / 8));
     const ws = runs.map((r) => r.b - r.a + 1).sort((p, q) => p - q);
-    scores.push({ y, n: runs.length, w: ws.length ? ws[ws.length >> 1] : 0 });
+    scores.push({ y, n: runs.length, w: ws.length ? ws[ws.length >> 1] : 0, cs: runs.map((r) => (r.a + r.b) / 2) });
   }
-  // the tallest stretch of rows with many black shapes: the black keys (letters on the keys make a short one)
-  let zone: { lo: number; hi: number; size: number } | null = null;
+  // stretches of rows with many black shapes: rows of black keys (letters on the keys make a short one)
+  const zones: Zone[] = [];
   for (let i = 0; i < scores.length; ) {
     if (scores[i].n < 7) {
       i++;
       continue;
     }
-    // a stretch of the same shapes: black keys do not change width from one row to the next
+    // a stretch of the same shapes: black keys change neither width nor place from one row to the
+    // next (letters on the keys below them, and labels across them, do)
     let j = i;
     const same = (a: number, b: number) => Math.abs(a - b) <= Math.max(a, b) * 0.5;
-    while (j + 1 < scores.length && scores[j + 1].n >= 7 && same(scores[j + 1].w, scores[j].w)) j++;
+    const samePlaces = (a: RowScore, b: RowScore) => {
+      let hit = 0;
+      for (const c of b.cs) if (a.cs.some((d) => Math.abs(d - c) <= 3)) hit++;
+      return hit >= b.cs.length * 0.6;
+    };
+    while (j + 1 < scores.length && scores[j + 1].n >= 7 && same(scores[j + 1].w, scores[j].w) && samePlaces(scores[j], scores[j + 1])) j++;
     const ns = scores.slice(i, j + 1).map((x) => x.n).sort((p, q) => p - q);
-    const size = (j - i + 1) * ns[ns.length >> 1];
-    if (!zone || size > zone.size) zone = { lo: i, hi: j, size };
+    zones.push({ lo: i, hi: j, size: (j - i + 1) * ns[ns.length >> 1] });
     i = j + 1;
   }
-  if (!zone) return null;
+  // dark shapes again below the white part of the keys (letters on the keys, or the black keys of a
+  // filmed piano under a drawn one) end this keyboard; a label across the black keys, with no white
+  // run before the keys go on, only interrupts them
+  const keyboards: (KeyboardLayout & { zone: Zone })[] = [];
+  const bySize = [...zones].sort((a, b) => b.size - a.size);
+  for (const zone of bySize) {
+    const height = scores[zone.lo].y - scores[zone.hi].y;
+    let bottom = band.b;
+    let white = 0;
+    for (let i = zone.lo - 1; i >= 0; i--) {
+      if (scores[i].n <= 2) white++;
+      else if (scores[i].n >= 7 && white >= Math.max(4, 0.4 * height)) {
+        bottom = scores[i].y - 2;
+        break;
+      }
+    }
+    const k = keyboardAbove(f, { a: band.a, b: bottom }, ext, span, scores, zone);
+    // the same keys again (the part of the black keys under a label across them): the same width, and
+    // no white rows between the two rows of black keys
+    const same = (x: KeyboardLayout & { zone: Zone }) => {
+      if (Math.abs(x.left - k!.left) >= k!.whiteWidth || Math.abs(x.right - k!.right) >= k!.whiteWidth) return false;
+      const [upper, lower] = x.zone.lo > zone.lo ? [x.zone, zone] : [zone, x.zone];
+      let whites = 0;
+      for (let i = lower.hi + 1; i < upper.lo; i++) if (scores[i].n <= 2) whites++;
+      return whites < 3;
+    };
+    if (k && !keyboards.some(same)) keyboards.push({ ...k, zone });
+  }
+  return keyboards.map(({ zone: _z, ...k }) => k);
+}
+
+interface RowScore {
+  y: number;
+  /** Dark runs of a black key's width on the row, and their centres. */
+  n: number;
+  w: number;
+  cs: number[];
+}
+
+function keyboardAbove(f: Frame, band: Run, ext: Run, span: number, scores: RowScore[], zone: Zone): KeyboardLayout | null {
   const zoneBottom = scores[zone.lo].y;
   const zoneTop = scores[zone.hi].y;
   if (zoneBottom - zoneTop < 2) return null;
@@ -338,6 +396,18 @@ function keyboardAbove(f: Frame, band: Run): KeyboardLayout | null {
   }
   if (seen.size < 5) return null;
   const bs = [...seen.keys()].sort((a, b) => a - b);
+  // the pattern's gaps: nothing dark between E and F or between B and C. Evenly spaced shapes (digits,
+  // letters, a fence) can fake the twos and threes but not the gaps
+  let gaps = 0;
+  let dark = 0;
+  for (let b = bs[0]; b <= bs[bs.length - 1]; b++) {
+    if (BLACK_AT.has(mod(b, 7))) continue;
+    const x = eC + w * b;
+    if (x < 0 || x >= f.width) continue;
+    gaps++;
+    if (centers.some((c) => Math.abs(c - x) < w * 0.35)) dark++;
+  }
+  if (gaps >= 3 && dark > gaps * 0.25) return null;
   const centreX = (j: number) => eC + w * (j + 0.5);
   const inFrame = (j: number) => centreX(j) >= 0 && centreX(j) < f.width;
   const isWhiteKey = (j: number) => {

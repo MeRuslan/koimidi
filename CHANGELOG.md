@@ -7,6 +7,7 @@ The tutorial on the practice screen.
 - **Video** on the practice screen, for a piece recognised from a YouTube link: the tutorial itself in YouTube's own player (koimidi keeps only the link, never the video), between the strip of bars and the stage, in step with the bars. It follows the tempo slider, waits with the bars in Learn mode, plays along in In tempo and Listen, and jumps with a click on a bar or a restart; in Listen mode the sound comes from the video and the synth keeps quiet. A switch in the rail turns it off and on, remembered in the settings. Offline, or when YouTube does not open (or the author forbids the video outside YouTube), a line says so and the piece works as before
 - The import notes where the piece's first bar lies in the video and the speed it was watched at, so a piece recognised before this version has no video on the practice screen until it is recognised again
 - The tempo of a recognised piece is the slope of a line through the whole pulse rather than the mean gap between notes: finer, so the video stays with the bars to the end of a long piece
+- The restart button's tooltip names its key, Enter, as the Start button's names Space
 
 ## v0.6.1 — 2026-10-25
 

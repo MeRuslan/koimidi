@@ -17,7 +17,7 @@ export interface LibraryItem {
   high?: number;
 }
 
-/** A fresh copy of a library piece each time: finger edits change notes in place. */
+/** A fresh copy of a library piece each time: the player's edits change its notes. */
 export function libraryScore(id: string): Score {
   const entry = PIECES.find((p) => p.id === id);
   if (!entry) throw new Error(`Unknown library piece ${id}`);

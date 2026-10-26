@@ -40,6 +40,9 @@
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></symbol>
   <symbol id="i-loop" viewBox="0 0 24 24"><path d="M16.5 3.5l3 3-3 3"/><path d="M4.5 11.5v-1a4 4 0 0 1 4-4h11"/><path d="M7.5 20.5l-3-3 3-3"/><path d="M19.5 12.5v1a4 4 0 0 1-4 4h-11"/></symbol>
   <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4.5 12h15"/><path d="m13.5 6 6 6-6 6"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4.5 19.5l.9-4.2L15.6 5.1a1.6 1.6 0 0 1 2.3 0l1 1a1.6 1.6 0 0 1 0 2.3L8.7 18.6z"/><path d="M13.6 7.1l3.3 3.3"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14.5 4.5 10 9 5.5"/><path d="M4.5 10H14a5 5 0 0 1 0 10h-3"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14.5 4.5-4.5L15 5.5"/><path d="M19.5 10H10a5 5 0 0 0 0 10h3"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M10 7V4.5h4V7"/><path d="M7 7l.8 12.5h8.4L17 7"/></symbol>
   <symbol id="i-keys" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v8M12 13v6M16 5v8M8 13v6M16 13v6"/><path d="M7 5h2v8H7zM15 5h2v8h-2z" fill="currentColor"/></symbol>
 </svg>
@@ -180,6 +183,12 @@
         </label>
       </div>
 
+      <div class="field">
+        <button id="edit" type="button" class="btn sm toggle edit-toggle" aria-pressed="false">
+          <svg class="i" aria-hidden="true"><use href="#i-pencil"/></svg><span data-i18n="edit"></span>
+        </button>
+      </div>
+
       <div class="field" id="videoField" hidden>
         <label class="check" data-i18n-title="video.panel.title">
           <input type="checkbox" id="videoOn" class="switch"><span data-i18n="video.panel"></span>
@@ -227,6 +236,14 @@
     <canvas id="stage" data-i18n-aria="stage.label"></canvas>
     <div id="hint" class="hint" role="status" hidden></div>
 
+    <div id="editBar" class="edit-bar" role="toolbar" data-i18n-aria="edit.title" hidden>
+      <b class="edit-title"><svg class="i" aria-hidden="true"><use href="#i-pencil"/></svg><span data-i18n="edit.title"></span></b>
+      <span class="edit-help" data-i18n="edit.help"></span>
+      <button id="editUndo" type="button" class="btn icon sm ghost"><svg class="i" aria-hidden="true"><use href="#i-undo"/></svg></button>
+      <button id="editRedo" type="button" class="btn icon sm ghost"><svg class="i" aria-hidden="true"><use href="#i-redo"/></svg></button>
+      <button id="editDone" type="button" class="btn primary sm" data-i18n="edit.done"></button>
+    </div>
+
     <div id="picker" class="picker" role="dialog" hidden>
       <div class="picker-head"><b id="pickerNote"></b><span id="pickerSrc"></span></div>
       <div id="pickerFingers" class="picker-fingers"></div>
@@ -234,6 +251,16 @@
         <button id="pickerReset" type="button" class="btn ghost sm" data-i18n="picker.reset"></button>
         <span class="fine" data-i18n="picker.keys"></span>
       </div>
+      <div class="picker-note">
+        <div class="seg picker-hand" role="radiogroup" data-i18n-aria="picker.hand" data-i18n-title="picker.hand">
+          <label><input type="radio" name="pickHand" value="L"><span data-i18n="hand.L"></span></label>
+          <label><input type="radio" name="pickHand" value="R"><span data-i18n="hand.R"></span></label>
+        </div>
+        <button id="pickerDelete" type="button" class="btn ghost sm danger" data-i18n-title="picker.delete.title">
+          <svg class="i" aria-hidden="true"><use href="#i-trash"/></svg><span data-i18n="picker.delete"></span>
+        </button>
+      </div>
+      <p id="pickerRetune" class="fine picker-retune" data-i18n="picker.retune" hidden></p>
     </div>
   </main>
 
@@ -293,6 +320,7 @@
         <div class="row actions">
           <button id="exportXml" type="button" class="btn sm" data-i18n="settings.export"></button>
           <button id="resetFingers" type="button" class="btn ghost sm"></button>
+          <button id="resetNotes" type="button" class="btn ghost sm" data-i18n="settings.resetNotes" hidden></button>
           <button id="resetPiece" type="button" class="btn ghost sm" data-i18n="settings.reset"></button>
         </div>
       </section>
@@ -306,6 +334,9 @@
           <dt><kbd>A</kbd>…<kbd>L</kbd></dt><dd data-i18n="keys.notes"></dd>
           <dt><kbd>Z</kbd> <kbd>X</kbd></dt><dd data-i18n="keys.octave"></dd>
           <dt><kbd>1</kbd>…<kbd>5</kbd></dt><dd data-i18n="keys.finger"></dd>
+          <dt><kbd>Delete</kbd></dt><dd data-i18n="keys.delete"></dd>
+          <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd data-i18n="keys.nudge"></dd>
+          <dt><kbd>Ctrl</kbd>/<kbd>⌘</kbd> <kbd>Z</kbd></dt><dd data-i18n="keys.undo"></dd>
           <dt><kbd>Esc</kbd></dt><dd data-i18n="keys.back"></dd>
         </dl>
       </section>

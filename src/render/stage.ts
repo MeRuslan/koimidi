@@ -14,6 +14,8 @@ import { fingerColor, palette, type Palette } from '../theme';
 const LOOKAHEAD_SEC = 5;
 /** height of the felt strip between the bars and the keys */
 const FELT = 4;
+/** keys added on each side while notes are edited, so a note can go a little beyond the piece */
+const EDIT_PAD = 5;
 
 interface Flash {
   p: number;
@@ -32,7 +34,7 @@ export interface KeyRect {
   black: boolean;
 }
 
-interface BarRect {
+export interface BarRect {
   x: number;
   w: number;
   top: number;
@@ -57,6 +59,10 @@ export class Stage {
   placement: Placement | null = null;
   /** Note whose finger is being edited: drawn with a dashed outline. */
   selected: ScoreNote | null = null;
+  /** Notes are being edited: the bars stand still over a beat grid, without the practice marks. */
+  editing = false;
+  /** Where a new note would go under the pointer, while editing. */
+  ghost: { pitch: number; t: number; dur: number } | null = null;
   /** Pitch of the computer's "A" key when its letters are shown on the keys (no MIDI keyboard), else null. */
   letters: number | null = null;
   private ppb = 1;
@@ -99,9 +105,10 @@ export class Stage {
     // the trainer's hand is shown too, but the controller is placed for the player's notes
     const pitches = [...own, ...this.engine.accompaniment.map((n) => n.pitch)];
     this.placement = this.profile ? placeRange(this.profile, own) : null;
+    const pad = this.editing ? EDIT_PAD : 0;
     if (this.profile && this.placement && keyCount(this.profile) <= MIRROR_MAX_KEYS) {
-      let lo = Math.min(this.placement.low, ...pitches);
-      let hi = Math.max(this.placement.high, ...pitches);
+      let lo = Math.min(this.placement.low, ...pitches) - pad;
+      let hi = Math.max(this.placement.high, ...pitches) + pad;
       while (isBlackKey(lo)) lo--;
       while (isBlackKey(hi)) hi++;
       this.low = Math.max(0, lo);
@@ -109,8 +116,8 @@ export class Stage {
       this.resize();
       return;
     }
-    let lo = pitches.length ? Math.min(...pitches) - 2 : 55;
-    let hi = pitches.length ? Math.max(...pitches) + 2 : 79;
+    let lo = pitches.length ? Math.min(...pitches) - 2 - pad : 55;
+    let hi = pitches.length ? Math.max(...pitches) + 2 + pad : 79;
     while (isBlackKey(lo)) lo--;
     while (isBlackKey(hi)) hi++;
     while (hi - lo < 24) {
@@ -190,13 +197,13 @@ export class Stage {
     return { x: r.x + inset, w: r.w - inset * 2, top, bot };
   }
 
-  /** The bar under a canvas point (above the keyboard), shortest first when bars overlap. */
+  /** The bar under a canvas point (above the keyboard), shortest first when bars overlap; while editing the trainer's hand too. */
   noteAt(x: number, y: number): ScoreNote | null {
     const e = this.engine;
     if (!e || y >= this.waterY) return null;
     let best: ScoreNote | null = null;
     let bestH = Infinity;
-    for (const n of e.activeNotes) {
+    for (const n of this.editing ? [...e.activeNotes, ...e.accompaniment] : e.activeNotes) {
       const r = this.barRect(n, e.pos);
       if (!r) continue;
       if (x < r.x - 3 || x > r.x + r.w + 3 || y < r.top - 3 || y > r.bot + 3) continue;
@@ -207,6 +214,37 @@ export class Stage {
       }
     }
     return best;
+  }
+
+  /** A note's bar on screen now, or null when it is not visible. */
+  box(n: ScoreNote): BarRect | null {
+    return this.engine ? this.barRect(n, this.engine.pos) : null;
+  }
+
+  /** Grid step in beats while editing: a sixteenth when there is room for it, coarser when the bars are short. */
+  editGrid(): number {
+    for (const g of [0.25, 0.5, 1, 2]) if (g * this.ppb >= 12) return g;
+    return 4;
+  }
+
+  /** Pixels per beat in the last frame drawn. */
+  get pxPerBeat(): number {
+    return this.ppb;
+  }
+
+  /** The beat at a height above the keyboard. */
+  beatAt(y: number): number {
+    return (this.engine?.pos ?? 0) + (this.waterY - y) / this.ppb;
+  }
+
+  /** The key whose lane is under x, black lanes over white ones. */
+  laneAt(x: number): number {
+    for (let p = this.low; p <= this.high; p++) {
+      if (!isBlackKey(p)) continue;
+      const k = this.keyRect(p);
+      if (x >= k.x && x <= k.x + k.w) return p;
+    }
+    return this.whites[Math.max(0, Math.min(this.whites.length - 1, Math.floor(x / this.wk)))];
   }
 
   /** Centre of a note's bar on screen, for anchoring the finger picker. */
@@ -289,6 +327,8 @@ export class Stage {
       }
     }
 
+    if (this.editing) this.drawGrid(yOf);
+
     // the other hand, played by the trainer: plain bars underneath
     ctx.fillStyle = pal.accBar;
     for (const n of e.accompaniment) {
@@ -301,7 +341,7 @@ export class Stage {
     // notes
     const target = e.target;
     const targetSet = new Set(target?.notes ?? []);
-    const showTarget = e.mode !== 'listen';
+    const showTarget = e.mode !== 'listen' && !this.editing;
     const both = e.hand === 'both';
     const played = parseFloat(pal.played) || 0.28;
     for (const n of e.activeNotes) {
@@ -310,7 +350,8 @@ export class Stage {
       const { x, w: bw, top, bot } = br;
       const h = bot - top;
       const rad = Math.min(6, bw / 2.6, h / 2);
-      const state = e.noteState(n);
+      // while editing every bar is drawn as it is written, not as it was played
+      const state = this.editing ? 0 : e.noteState(n);
       const col = state === 2 ? pal.missed : fingerColor(n.finger);
       const outlined = both && n.hand === 'L';
       ctx.globalAlpha = state === 1 ? played : 1;
@@ -343,15 +384,6 @@ export class Stage {
         rr(ctx, x - 2.5, top - 2.5, bw + 5, h + 5, rad + 2);
         ctx.stroke();
       }
-      if (n === this.selected) {
-        ctx.globalAlpha = 1;
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = pal.ring;
-        ctx.setLineDash([4, 3]);
-        rr(ctx, x - 5, top - 5, bw + 10, h + 10, rad + 4);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
       if (n.finger && h > 15 && bw > 11) this.fingerChip(n.finger, x + bw / 2, bot, bw, h, outlined, col);
       if (n.fingerSource === 'user' && h > 12 && bw > 10) {
         // the player's own choice: a small dot in the corner
@@ -363,10 +395,13 @@ export class Stage {
       ctx.globalAlpha = 1;
     }
 
-    // outside the practised bars: a wash over everything; the lead-in before bar 1 has nothing to dim
+    if (this.selected) this.drawSelected(this.selected);
+    if (this.ghost) this.drawGhost(this.ghost, yOf);
+
+    // outside the practised bars: a wash over everything (not while editing: every bar can be edited); the lead-in before bar 1 has nothing to dim
     ctx.fillStyle = pal.dim;
-    if (yEnd > 0) ctx.fillRect(0, 0, w, Math.min(yEnd, waterY));
-    if (rs > 1e-6 && yStart < waterY) ctx.fillRect(0, Math.max(yStart, 0), w, waterY - Math.max(yStart, 0));
+    if (!this.editing && yEnd > 0) ctx.fillRect(0, 0, w, Math.min(yEnd, waterY));
+    if (!this.editing && rs > 1e-6 && yStart < waterY) ctx.fillRect(0, Math.max(yStart, 0), w, waterY - Math.max(yStart, 0));
     // range boundaries
     for (const [y, isEnd] of [[yStart, false], [yEnd, true]] as [number, boolean][]) {
       if (y < 0 || y > waterY) continue;
@@ -429,10 +464,95 @@ export class Stage {
       ctx.globalAlpha = 1;
     }
 
-    if (e.mode === 'learn' && e.target && !e.finished) {
+    if (e.mode === 'learn' && e.target && !e.finished && !this.editing) {
       if (!e.playing) this.pill(t('hud.pressToStart'), w / 2, waterY - 24);
       else if (e.waiting) this.pill(t('hint.waiting'), w / 2, waterY - 24);
     }
+  }
+
+  /** While editing: a faint line on every beat, and on every grid step when they are far enough apart. */
+  private drawGrid(yOf: (beat: number) => number): void {
+    const ctx = this.ctx;
+    const { w, waterY, pal } = this;
+    const score = this.score!;
+    const beat = 4 / score.timeSig[1];
+    const grid = this.editGrid();
+    const fine = grid < beat ? grid : beat;
+    ctx.strokeStyle = pal.barline;
+    ctx.lineWidth = 1;
+    for (const m of score.measures) {
+      const y0 = yOf(m.t);
+      if (y0 < 0) break;
+      if (yOf(m.t + m.beats) > waterY) continue;
+      for (let k = 1; k * fine < m.beats - 1e-6; k++) {
+        const b = m.t + k * fine;
+        const y = Math.round(yOf(b)) + 0.5;
+        if (y < 0 || y > waterY) continue;
+        const onBeat = Math.abs(k * fine - Math.round((k * fine) / beat) * beat) < 1e-6;
+        ctx.globalAlpha = onBeat ? 0.45 : 0.2;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** The note being edited: a dashed outline, and while editing a grip on the top edge to drag its length. */
+  private drawSelected(n: ScoreNote): void {
+    const br = this.box(n);
+    if (!br) return;
+    const ctx = this.ctx;
+    const { x, w: bw, top, bot } = br;
+    const h = bot - top;
+    const rad = Math.min(6, bw / 2.6, h / 2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = this.pal.ring;
+    ctx.setLineDash([4, 3]);
+    rr(ctx, x - 5, top - 5, bw + 10, h + 10, rad + 4);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (!this.editing || h <= 14) return;
+    // in the ink of the bar's number; an outlined bar is dark inside, so its own colour there
+    const outlined = this.engine?.hand === 'both' && n.hand === 'L';
+    ctx.strokeStyle = outlined ? fingerColor(n.finger) : this.pal.onBar;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1.5;
+    const gw = Math.min(14, bw - 8) / 2;
+    ctx.beginPath();
+    for (const dy of [4, 7]) {
+      ctx.moveTo(x + bw / 2 - gw, top + dy);
+      ctx.lineTo(x + bw / 2 + gw, top + dy);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  /** Where a click would put a new note: a dashed outline in its lane. */
+  private drawGhost(g: { pitch: number; t: number; dur: number }, yOf: (beat: number) => number): void {
+    if (g.pitch < this.low || g.pitch > this.high) return;
+    const ctx = this.ctx;
+    const r = this.keyRect(g.pitch);
+    const inset = r.black ? 1.5 : Math.min(5, Math.max(2, r.w * 0.1));
+    const bot = Math.min(yOf(g.t) - 1.5, this.waterY);
+    const top = yOf(g.t + g.dur) + 1.5;
+    if (bot <= top) return;
+    const x = r.x + inset;
+    const bw = r.w - inset * 2;
+    const rad = Math.min(6, bw / 2.6, (bot - top) / 2);
+    ctx.fillStyle = this.pal.ring;
+    ctx.globalAlpha = 0.08;
+    rr(ctx, x, top, bw, bot - top, rad);
+    ctx.fill();
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = this.pal.ring;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    rr(ctx, x + 0.75, top + 0.75, bw - 1.5, bot - top - 1.5, rad);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
   }
 
   /** Faint lanes under the black keys and a line at every C, like ruled paper. */

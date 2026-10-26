@@ -12,7 +12,7 @@ import type { Finger, FingerSource, Score, ScoreNote } from './model';
 export type FingerEdits = Record<string, Finger>;
 
 /** Stable note key: MIDI pitch and onset in 1/480 of a beat. */
-export function noteKey(n: ScoreNote): string {
+export function noteKey(n: Pick<ScoreNote, 'pitch' | 't'>): string {
   return `${n.pitch}@${Math.round(n.t * 480)}`;
 }
 
@@ -34,8 +34,8 @@ function restore(n: ScoreNote): void {
   }
 }
 
-/** Apply stored edits to a freshly parsed score and refit the automatic fingering. Returns how many applied. */
-export function applyEdits(score: Score, edits: FingerEdits): number {
+/** Put the stored fingers on their notes without refitting the rest. Returns how many applied. */
+export function markUserFingers(score: Score, edits: FingerEdits): number {
   let applied = 0;
   for (const n of score.notes) {
     const f = edits[noteKey(n)];
@@ -45,6 +45,12 @@ export function applyEdits(score: Score, edits: FingerEdits): number {
     n.fingerSource = 'user';
     applied++;
   }
+  return applied;
+}
+
+/** Apply stored edits to a freshly parsed score and refit the automatic fingering. Returns how many applied. */
+export function applyEdits(score: Score, edits: FingerEdits): number {
+  const applied = markUserFingers(score, edits);
   if (applied) autoFinger(score, { refresh: true });
   return applied;
 }

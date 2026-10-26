@@ -1,0 +1,8 @@
+Onsets and Frames piano transcription (Magenta, Google), Apache License 2.0:
+https://github.com/magenta/magenta-js/tree/master/music/src/transcription
+Hawthorne et al., "Onsets and Frames: Dual-Objective Piano Transcription", ISMIR 2018.
+Checkpoint: https://storage.googleapis.com/magentadata/js/checkpoints/transcription/onsets_frames_uni
+
+Changes made for koimidi (scripts/build-onsets-frames.mjs in
+https://github.com/MeRuslan/koimidi): the velocity stack removed, every
+weight stored as uint8 with its own minimum and step (TF.js quantisation).

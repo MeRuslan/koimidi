@@ -12,6 +12,8 @@ export type Lang = 'ru' | 'en';
 export type NoteNames = 'auto' | 'solfege' | 'letters';
 /** How a video is recognised: by its sound, or by the keys lighting up in the picture. */
 export type VideoBy = 'ear' | 'eye';
+/** What the sound of a video is: a piano (heard by a piano network) or another instrument (a universal one). */
+export type VideoSound = 'piano' | 'other';
 
 export interface Settings {
   v: 1;
@@ -40,6 +42,8 @@ export interface Settings {
   theme: ThemeChoice;
   /** how a video is recognised: by ear (the default) or by the lit keys */
   videoBy: VideoBy;
+  /** by ear: a piano (the default) or another instrument */
+  videoSound: VideoSound;
   /** show the video a piece was recognised from on the practice screen, in step with the bars */
   video: boolean;
   lastPieceId?: string;
@@ -65,6 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   volume: 0.55,
   videoBy: 'ear',
+  videoSound: 'piano',
   anyOctave: true,
   noteNames: 'auto',
   midiSplit: 'auto',

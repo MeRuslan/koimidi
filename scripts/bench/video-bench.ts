@@ -12,9 +12,10 @@
  * count moving together). Arrangements differ from the library, so the
  * numbers are a proxy; the alignment is written out to be looked at.
  *
- * With --audio the fallback by ear is measured instead: Basic Pitch on the
- * video's sound, the hands as the importer splits a one-track MIDI (below
- * middle C to the left when the notes span both registers).
+ * With --audio recognition by ear is measured instead: Basic Pitch on the
+ * video's sound (--piano: the app's Onsets and Frames), the hands as the
+ * importer splits a one-track MIDI (below middle C to the left when the notes
+ * span both registers).
  */
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -28,7 +29,8 @@ import type { Frame } from '../../src/video/frame';
 import { detectKeyboards, type KeyboardLayout } from '../../src/video/keyboard';
 import { KeyTracker, playable, type RawNote } from '../../src/video/tracker';
 import { octaveHint, transcribe, type Transcribed, type TranscribedNote } from '../../src/video/transcribe';
-import { basicPitchFromDisk, samplesOf } from './basic-pitch-node';
+import { PIANO_RATE, type OnsetsAndFrames } from '../../src/video/onsets-frames';
+import { basicPitchFromDisk, onsetsFramesFromDisk, samplesOf } from './basic-pitch-node';
 
 /** The app's grabber scales frames to at most this wide. */
 const MAX_W = 960;
@@ -387,8 +389,147 @@ export interface Result {
   tracker: { frames: number; skipped: number; speed: number | null; raw: number; playable: boolean } | null;
   transcribed: { notes: number; bpm: number; timeSig: string; hands: string; measures: number; octave: number } | null;
   metrics: Metrics | null;
+  /** By ear: every note heard against every note the picture read, where the picture is trusted. */
+  notes?: NoteMetrics | null;
   alignment: string;
   seconds: number;
+}
+
+/* ---------- all the notes, against the picture ---------- */
+
+/**
+ * The melody is a proxy (arrangements differ from the library); where the
+ * keys light up and the picture got the melody right, its notes are close to
+ * what was played, both hands, so the sound can be checked note by note.
+ */
+export interface PictureRef {
+  notes: { pitch: number; on: number; off: number }[];
+  low: number;
+  high: number;
+  /** The keyboard did not show its octave: the picture's notes may sit whole octaves off. */
+  octaveSure: boolean;
+}
+
+export interface NoteMetrics {
+  /** Notes heard that the picture has too (the same key, onsets within NOTE_TOL once the two clocks are lined up), and notes of the picture heard. */
+  precision: number;
+  recall: number;
+  f1: number;
+  /** Shares of the notes heard that the picture lacks: an octave, two, or a twelfth (a harmonic) away from a note struck at that moment, a semitone or two away, the same key struck again while the picture holds it, anything else. */
+  harmonic: number;
+  near: number;
+  again: number;
+  other: number;
+  /** Seconds the sound runs ahead of the picture, and semitones the picture was moved (a keyboard that did not show its octave). */
+  lag: number;
+  shift: number;
+  ref: number;
+  heard: number;
+}
+
+const NOTE_TOL = 0.07;
+const NOTE_NAME = /^([A-G]#?)(-?\d+)$/;
+const midiOf = (s: string) => {
+  const m = NOTE_NAME.exec(s);
+  return m ? NAMES.indexOf(m[1]) + 12 * (Number(m[2]) + 1) : NaN;
+};
+
+/** The picture's notes from its run (`summary.json` and `<id>.raw.json`), only for videos where it found ≥ 90% of the melody with ≤ 5% wrong. */
+export function loadPicture(dir: string): Map<string, PictureRef> {
+  const out = new Map<string, PictureRef>();
+  for (const r of JSON.parse(readFileSync(join(dir, 'summary.json'), 'utf8')) as Result[]) {
+    const m = r.metrics;
+    const file = join(dir, `${r.id}.raw.json`);
+    if (!m || !r.keyboard || !r.transcribed || r.tracker?.playable === false || m.found < 0.9 || m.wrong > 0.05 || !existsSync(file)) continue;
+    const shift = 12 * (r.transcribed.octave ?? 0);
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as RawNote[];
+    out.set(r.id, { notes: raw.map((n) => ({ pitch: n.pitch + shift, on: n.on, off: n.off })), low: midiOf(r.keyboard.low) + shift, high: midiOf(r.keyboard.high) + shift, octaveSure: r.keyboard.octaveSure });
+  }
+  return out;
+}
+
+/** Pairs of the same key within the tolerance, earliest first; `match[j]` is the reference note for heard note j, or -1. */
+function matchNotes(ref: { pitch: number; on: number }[], est: { pitch: number; on: number }[], lag: number): Int32Array {
+  const match = new Int32Array(est.length).fill(-1);
+  const byPitch = new Map<number, { r: number[]; e: number[] }>();
+  const slot = (p: number) => byPitch.get(p) ?? byPitch.set(p, { r: [], e: [] }).get(p)!;
+  ref.forEach((n, i) => slot(n.pitch).r.push(i));
+  est.forEach((n, j) => slot(n.pitch).e.push(j));
+  for (const { r, e } of byPitch.values()) {
+    r.sort((a, b) => ref[a].on - ref[b].on);
+    e.sort((a, b) => est[a].on - est[b].on);
+    let i = 0;
+    let j = 0;
+    while (i < r.length && j < e.length) {
+      const d = est[e[j]].on - lag - ref[r[i]].on;
+      if (Math.abs(d) <= NOTE_TOL) match[e[j++]] = r[i++];
+      else if (d < 0) j++;
+      else i++;
+    }
+  }
+  return match;
+}
+
+export function againstPicture(picture: PictureRef, raw: RawNote[]): NoteMetrics {
+  let best: NoteMetrics | null = null;
+  for (const shift of picture.octaveSure ? [0] : [-24, -12, 0, 12, 24]) {
+    const moved = { ...picture, notes: picture.notes.map((n) => ({ ...n, pitch: n.pitch + shift })), low: picture.low + shift, high: picture.high + shift };
+    const m = { ...againstNotes(moved, raw), shift };
+    if (!best || m.precision * m.heard > best.precision * best.heard) best = m;
+  }
+  return best!;
+}
+
+function againstNotes(pic: PictureRef, raw: RawNote[]): NoteMetrics {
+  // only the keys the picture could see, and only while it was looking (a second either side)
+  const ref = pic.notes;
+  const first = Math.min(...ref.map((n) => n.on));
+  const last = Math.max(...ref.map((n) => n.on));
+  const heardAt = (lag: number) => raw.filter((n) => n.pitch >= pic.low && n.pitch <= pic.high && n.on - lag >= first - 1 && n.on - lag <= last + 1);
+  const count = (lag: number) => matchNotes(ref, heardAt(lag), lag).reduce((a, m) => a + (m >= 0 ? 1 : 0), 0);
+  // the clocks lined up: coarsely over two seconds either way (some uploads shift the sound), then to the hundredth
+  let best = { lag: 0, n: -1 };
+  for (let lag = -2; lag <= 2 + 1e-9; lag += 0.05) {
+    const n = count(lag);
+    if (n > best.n) best = { lag, n };
+  }
+  const coarse = best.lag;
+  for (let lag = coarse - 0.05; lag <= coarse + 0.05 + 1e-9; lag += 0.01) {
+    const n = count(lag);
+    if (n > best.n) best = { lag, n };
+  }
+  const lag = best.lag;
+  const est = heardAt(lag);
+  const match = matchNotes(ref, est, lag);
+  let harmonic = 0;
+  let near = 0;
+  let again = 0;
+  let other = 0;
+  est.forEach((n, j) => {
+    if (match[j] >= 0) return;
+    const t = n.on - lag;
+    const at = ref.filter((r) => Math.abs(t - r.on) <= NOTE_TOL).map((r) => n.pitch - r.pitch);
+    if (at.some((d) => [12, -12, 24, -24, 19].includes(d))) harmonic++;
+    else if (at.some((d) => Math.abs(d) <= 2)) near++;
+    else if (ref.some((r) => r.pitch === n.pitch && r.on < t && r.off + NOTE_TOL > t)) again++;
+    else other++;
+  });
+  const tp = best.n;
+  const precision = est.length ? tp / est.length : 0;
+  const recall = ref.length ? tp / ref.length : 0;
+  return {
+    precision,
+    recall,
+    f1: precision + recall ? (2 * precision * recall) / (precision + recall) : 0,
+    harmonic: est.length ? harmonic / est.length : 0,
+    near: est.length ? near / est.length : 0,
+    again: est.length ? again / est.length : 0,
+    other: est.length ? other / est.length : 0,
+    lag: Math.round(lag * 100) / 100,
+    shift: 0,
+    ref: ref.length,
+    heard: est.length,
+  };
 }
 
 /** A frame with the detected keys marked, as a PNG, to see what the detector saw. */
@@ -485,8 +626,26 @@ function importerHands(notes: TranscribedNote[]): Hand[] {
   return pitches.map((p) => (split && p < 60 ? 'L' : 'R'));
 }
 
-/** The fallback by ear on the video's sound, scored like the picture. */
-export async function benchAudio(e: Entry, out: string | undefined, bp: BasicPitch): Promise<Result> {
+/** What listens: Basic Pitch or Onsets and Frames as the app runs them, or the notes another model wrote for each video (`<id>.json` or `<id>.raw.json` with pitch, on, off in seconds). */
+export type Ear = { kind: 'basic-pitch'; bp: BasicPitch } | { kind: 'piano'; model: OnsetsAndFrames } | { kind: 'notes'; dir: string };
+
+function heardBy(ear: Ear, e: Entry, v: VideoInfo): Promise<{ raw: RawNote[]; seconds: number }> | { raw: RawNote[]; seconds: number } {
+  if (ear.kind === 'basic-pitch') {
+    const samples = samplesOf(e.file);
+    return listenWith(ear.bp, samples, () => {}).then((raw) => ({ raw, seconds: samples.length / 22050 }));
+  }
+  if (ear.kind === 'piano') {
+    const samples = samplesOf(e.file, PIANO_RATE);
+    return ear.model.notes(samples).then((raw) => ({ raw, seconds: samples.length / PIANO_RATE }));
+  }
+  const file = [join(ear.dir, `${e.id}.json`), join(ear.dir, `${e.id}.raw.json`)].find((f) => existsSync(f));
+  if (!file) throw new Error(`no notes for ${e.id} in ${ear.dir}`);
+  const notes = JSON.parse(readFileSync(file, 'utf8')) as { pitch: number; on: number; off: number }[];
+  return { raw: notes.map((n) => ({ pitch: n.pitch, on: n.on, off: n.off, color: [128, 128, 128] })), seconds: v.duration };
+}
+
+/** The fallback by ear on the video's sound, scored like the picture (and, given the picture's run, note by note against it). */
+export async function benchAudio(e: Entry, out: string | undefined, ear: Ear, picture?: Map<string, PictureRef>): Promise<Result> {
   const t0 = performance.now();
   const v = probeVideo(e.file);
   const res: Result = {
@@ -504,9 +663,10 @@ export async function benchAudio(e: Entry, out: string | undefined, bp: BasicPit
     alignment: '',
     seconds: 0,
   };
-  const samples = samplesOf(e.file);
-  const raw = await listenWith(bp, samples, () => {});
-  res.audio = { seconds: Math.round(samples.length / 22050), heard: raw.length };
+  const { raw, seconds } = await heardBy(ear, e, v);
+  res.audio = { seconds: Math.round(seconds), heard: raw.length };
+  const ref = picture?.get(e.id);
+  if (ref) res.notes = againstPicture(ref, raw);
   if (out) writeFileSync(join(out, `${e.id}.raw.json`), JSON.stringify(raw));
   const heard = transcribe(raw);
   const hands = importerHands(heard.notes);
@@ -532,6 +692,7 @@ export function describe(r: Result): string {
     const tr = r.transcribed;
     lines.push(`  by ear: ${r.audio?.heard ?? 0} notes heard in ${r.audio?.seconds ?? 0} s of sound → ${tr.notes} notes, ${tr.timeSig}, ${tr.bpm} bpm, hands: ${tr.hands}, ${tr.measures} bars`);
     lines.push(melodyLine(r));
+    if (r.notes) lines.push(notesLine(r.notes));
     lines.push(`  ${r.alignment}`);
     return lines.join('\n');
   }
@@ -547,6 +708,10 @@ export function describe(r: Result): string {
   lines.push(melodyLine(r));
   lines.push(`  ${r.alignment}`);
   return lines.join('\n');
+}
+
+function notesLine(n: NoteMetrics): string {
+  return `  all notes vs the picture (${n.ref} there, ${n.heard} heard, sound ${n.lag >= 0 ? '+' : ''}${n.lag} s${n.shift ? `, picture moved ${n.shift > 0 ? '+' : ''}${n.shift}` : ''}): precision ${pct(n.precision)}, recall ${pct(n.recall)}, F1 ${pct(n.f1)} · not in the picture: harmonics ${pct(n.harmonic)}, a tone off ${pct(n.near)}, struck again ${pct(n.again)}, other ${pct(n.other)}`;
 }
 
 function melodyLine(r: Result): string {
@@ -578,7 +743,11 @@ export function summary(results: Result[]): string {
     const xs = ok.map((r) => f(r.metrics!)).filter((x): x is number => x !== null);
     return xs.length ? xs.reduce((a, v) => a + v, 0) / xs.length : null;
   };
-  return `${ok.length}/${results.length} ${results.some((r) => r.source === 'audio') ? 'heard' : 'with lit keys'} · found ${pct(mean((m) => m.found))} · wrong ${pct(mean((m) => m.wrong))} · extra ${pct(mean((m) => m.extra))} · hands ${pct(mean((m) => m.hands))} · rhythm ${pct(mean((m) => m.rhythm))} · bars ${pct(mean((m) => m.bars))}`;
+  const line = `${ok.length}/${results.length} ${results.some((r) => r.source === 'audio') ? 'heard' : 'with lit keys'} · found ${pct(mean((m) => m.found))} · wrong ${pct(mean((m) => m.wrong))} · extra ${pct(mean((m) => m.extra))} · hands ${pct(mean((m) => m.hands))} · rhythm ${pct(mean((m) => m.rhythm))} · bars ${pct(mean((m) => m.bars))}`;
+  const vs = results.map((r) => r.notes).filter((n): n is NoteMetrics => !!n);
+  if (!vs.length) return line;
+  const avg = (f: (n: NoteMetrics) => number) => vs.reduce((a, n) => a + f(n), 0) / vs.length;
+  return `${line}\nall notes vs the picture on ${vs.length} videos · precision ${pct(avg((n) => n.precision))} · recall ${pct(avg((n) => n.recall))} · F1 ${pct(avg((n) => n.f1))} · heard but not there: harmonics ${pct(avg((n) => n.harmonic))}, a tone off ${pct(avg((n) => n.near))}, struck again ${pct(avg((n) => n.again))}, other ${pct(avg((n) => n.other))}`;
 }
 
 export function compare(before: Result[], after: Result[], labels: [string, string] = ['before', 'after']): string {
@@ -677,11 +846,21 @@ export async function main(args: string[]): Promise<number> {
     const [k, n] = shard.split('/').map(Number);
     entries = entries.filter((_, i) => i % n === k);
   }
-  const bp = args.includes('--audio') ? await basicPitchFromDisk() : null;
+  // --notes <dir>: what another model heard, scored like the fallback by ear; --vs-picture <dir>: the picture's run, to check all the notes against
+  const notesDir = arg(args, '--notes');
+  const ear: Ear | null = notesDir
+    ? { kind: 'notes', dir: notesDir }
+    : args.includes('--piano')
+      ? { kind: 'piano', model: await onsetsFramesFromDisk() }
+      : args.includes('--audio')
+        ? { kind: 'basic-pitch', bp: await basicPitchFromDisk() }
+        : null;
+  const vsPicture = arg(args, '--vs-picture');
+  const picture = vsPicture ? loadPicture(vsPicture) : undefined;
   const results: Result[] = [];
   for (const e of entries) {
     try {
-      const r = bp ? await benchAudio(e, out, bp) : await benchOne(e, out, peek);
+      const r = ear ? await benchAudio(e, out, ear, picture) : await benchOne(e, out, peek);
       results.push(r);
       console.log(describe(r));
     } catch (err) {

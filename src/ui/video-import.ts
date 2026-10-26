@@ -7,14 +7,14 @@
  */
 import type { App } from '../app';
 import { barsLabel, keysLabel, noteName, notesLabel, t } from '../i18n';
-import { AudioTake, decodeAudio, listen } from '../video/audio';
+import { AudioTake, decodeAudio, listen, listenPiano, PIANO_RATE } from '../video/audio';
 import { canCapture, captureOther, captureThisTab, StreamGrabber, VideoGrabber, type Grabbed, type Grabber } from '../video/capture';
 import { KeyboardFinder } from '../video/finder';
 import type { Frame } from '../video/frame';
 import { sameKeyboard, type KeyboardLayout } from '../video/keyboard';
 import { KeyTracker, playable, type RawNote } from '../video/tracker';
 import { octaveHint, toMidi, transcribe, type Transcribed } from '../video/transcribe';
-import { saveSettings, type VideoBy } from '../storage/settings';
+import { saveSettings, type VideoBy, type VideoSound } from '../storage/settings';
 import { fitOffset, type ClockSample } from '../video/clock';
 import { YouTubePlayer, YT_STATE, youTubeId, youTubeProblemOf, youTubeStart, type YouTubeProblem } from '../video/youtube';
 import { onThemeChange, palette } from '../theme';
@@ -102,6 +102,10 @@ export class VideoImportView {
       r.checked = r.value === this.by;
       r.addEventListener('change', () => r.checked && this.setBy(r.value as VideoBy));
     }
+    for (const r of document.querySelectorAll<HTMLInputElement>('input[name="viSound"]')) {
+      r.checked = r.value === this.app.settings.videoSound;
+      r.addEventListener('change', () => r.checked && this.setSound(r.value as VideoSound));
+    }
     $('viAnother').addEventListener('click', () => this.toSource());
     $<HTMLSelectElement>('viSpeed').addEventListener('change', (e) => (this.speed = +(e.target as HTMLSelectElement).value));
     $<HTMLSelectElement>('viMeter').addEventListener('change', (e) => {
@@ -185,7 +189,10 @@ export class VideoImportView {
     $('viProgressRow').hidden = !((p === 'recording' || p === 'listening') && this.kind !== 'tab');
     $('viByRow').hidden = !choosing;
     for (const r of document.querySelectorAll<HTMLInputElement>('input[name="viBy"]')) r.checked = r.value === this.by;
-    $('viByNote').textContent = t(ear ? 'video.by.ear.note' : 'video.by.eye.note');
+    const piano = this.app.settings.videoSound === 'piano';
+    $('viSoundRow').hidden = !ear;
+    for (const r of document.querySelectorAll<HTMLInputElement>('input[name="viSound"]')) r.checked = r.value === this.app.settings.videoSound;
+    $('viByNote').textContent = t(!ear ? 'video.by.eye.note' : piano ? 'video.by.ear.note' : 'video.by.ear.other.note');
   }
 
   /** How the video is recognised: by its sound (the default) or by the keys lighting up. */
@@ -203,6 +210,14 @@ export class VideoImportView {
       if (by === 'eye') void this.watchTab(this.gen);
       else this.status(t('video.tab.readyEar'));
     }
+    this.buttons();
+  }
+
+  /** By ear: a piano (Onsets and Frames) or another instrument (Basic Pitch). */
+  private setSound(sound: VideoSound): void {
+    if (sound === this.app.settings.videoSound) return;
+    this.app.settings.videoSound = sound;
+    saveSettings(this.app.settings);
     this.buttons();
   }
 
@@ -776,21 +791,39 @@ export class VideoImportView {
     if (gen === this.gen) await this.think(data, gen);
   }
 
-  /** Recognise notes in recorded or file sound with Basic Pitch. */
+  /** Recognise notes in recorded or file sound: a piano by Onsets and Frames, another instrument by Basic Pitch. */
   private async think(data: ArrayBuffer, gen: number): Promise<void> {
     this.phase = 'thinking';
     this.buttons();
     this.status(t('video.audio.decoding'));
     try {
-      const samples = await decodeAudio(data);
-      if (gen !== this.gen) return;
-      this.status(t('video.audio.thinking', { p: 0 }));
       let shown = 0;
-      const raw = await listen(samples, (p) => {
+      let line: 'video.audio.thinking' | 'video.audio.notPiano' = 'video.audio.thinking';
+      const thinking = (p: number) => {
         shown = Math.max(shown, Math.round(p * 100));
-        if (gen === this.gen) this.status(t('video.audio.thinking', { p: shown }));
-      });
-      if (gen !== this.gen) return;
+        if (gen === this.gen) this.status(t(line, { p: shown }));
+      };
+      const piano = this.app.settings.videoSound === 'piano';
+      // decoding takes the buffer away: a copy for Basic Pitch, should no piano be heard
+      const spare = piano ? data.slice(0) : null;
+      let raw: RawNote[] = [];
+      if (piano) {
+        const samples = await decodeAudio(data, PIANO_RATE);
+        if (gen !== this.gen) return;
+        const mb = (b: number) => (b / 1e6).toFixed(1);
+        raw = await listenPiano(samples, thinking, (got, total) => {
+          if (gen === this.gen && got < total) this.status(t('video.audio.model', { got: mb(got), total: mb(total) }));
+        });
+        if (gen !== this.gen) return;
+      }
+      if (!raw.length) {
+        if (piano) line = 'video.audio.notPiano';
+        shown = 0;
+        const samples = await decodeAudio(spare ?? data);
+        if (gen !== this.gen) return;
+        raw = await listen(samples, thinking);
+        if (gen !== this.gen) return;
+      }
       this.fromAudio = true;
       this.showResult(raw);
     } catch (e) {

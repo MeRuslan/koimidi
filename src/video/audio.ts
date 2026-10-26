@@ -1,24 +1,29 @@
 /**
- * The fallback for videos without a lit keyboard: listen instead of look.
- * Spotify's Basic Pitch (a small neural network, Apache-2.0) turns piano
- * audio into notes in the browser. It hears the notes but not which hand
- * played them, and it makes mistakes, so its result is a draft. The network
- * and TensorFlow.js load only when this is used.
+ * Recognition by ear: listen instead of look. A piano is heard by Magenta's
+ * Onsets and Frames (see onsets-frames.ts), trained on piano only and sure of
+ * its notes; any other instrument by Spotify's Basic Pitch (a small network,
+ * Apache-2.0), which hears anything but gets more notes wrong, often an octave
+ * too high. Neither knows which hand played, so the importer splits the hands
+ * by pitch. The networks and TensorFlow.js load only when they are used.
  */
 import type { BasicPitch } from '@spotify/basic-pitch';
+import { loadOnsetsFrames, PIANO_RATE, type OnsetsAndFrames } from './onsets-frames';
 import type { RawNote } from './tracker';
 
+export { PIANO_RATE };
 /** Basic Pitch listens at 22.05 kHz, mono. */
-const RATE = 22050;
+export const RATE = 22050;
 /** Served next to the page (see vite.config.ts). */
 const MODEL = 'models/basic-pitch/model.json';
+/** In public/, built by scripts/build-onsets-frames.mjs. */
+const PIANO_MODEL = 'models/onsets-frames/';
 /** Shortest note kept, in model frames (about 86 a second): ~130 ms, Basic Pitch's own default. */
 const MIN_FRAMES = 11;
 
-/** Mono samples at 22.05 kHz from an audio or video file, or a recording. */
-export async function decodeAudio(data: ArrayBuffer): Promise<Float32Array> {
+/** Mono samples at `rate` (Basic Pitch's by default) from an audio or video file, or a recording. */
+export async function decodeAudio(data: ArrayBuffer, rate = RATE): Promise<Float32Array> {
   // decoding in a context of the target rate resamples on the way
-  const ctx = new OfflineAudioContext(1, 1, RATE);
+  const ctx = new OfflineAudioContext(1, 1, rate);
   const buf = await ctx.decodeAudioData(data);
   if (buf.numberOfChannels === 1) return buf.getChannelData(0);
   const out = new Float32Array(buf.length);
@@ -29,7 +34,25 @@ export async function decodeAudio(data: ArrayBuffer): Promise<Float32Array> {
   return out;
 }
 
-/** Notes heard in the samples. `progress` gets 0–1. */
+let piano: Promise<OnsetsAndFrames> | null = null;
+
+/**
+ * Notes of a piano heard in samples at PIANO_RATE. The weights (11 MB) are
+ * fetched the first time, `loading` hears the bytes (got, total); `progress`
+ * gets 0–1 while listening.
+ */
+export async function listenPiano(samples: Float32Array, progress: (p: number) => void, loading: (got: number, total: number) => void): Promise<RawNote[]> {
+  if (!piano) {
+    const tf = await import('@tensorflow/tfjs');
+    piano = loadOnsetsFrames(tf, new URL(PIANO_MODEL, document.baseURI).href, loading).catch((e: unknown) => {
+      piano = null;
+      throw e;
+    });
+  }
+  return (await piano).notes(samples, progress);
+}
+
+/** Notes of any instrument heard in samples at RATE, by Basic Pitch. `progress` gets 0–1. */
 export async function listen(samples: Float32Array, progress: (p: number) => void): Promise<RawNote[]> {
   const { BasicPitch } = await import('@spotify/basic-pitch');
   return listenWith(new BasicPitch(new URL(MODEL, document.baseURI).href), samples, progress);

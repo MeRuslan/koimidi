@@ -24,6 +24,7 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@fontsource/unbounded": "^5.2.0",
     "@spotify/basic-pitch": "^1.0.1",
+    "@tensorflow/tfjs": "^3.21.0",
     "@tonejs/midi": "^2.0.28",
     "fflate": "^0.8.2",
     "spessasynth_lib": "^4.3.14"

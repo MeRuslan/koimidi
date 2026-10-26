@@ -6,6 +6,7 @@
  * and waits; the page offers a reload, then sends "skip-waiting".
  */
 const CACHE = 'koimidi-__VERSION__';
+const MODELS = 'koimidi-models';
 const PRECACHE = __PRECACHE__;
 
 const scoped = (path) => new URL(path, self.registration.scope).href;
@@ -20,7 +21,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      // older versions of the app; the downloaded sounds ("koimidi-sounds") stay
+      // older versions of the app; the downloaded sounds ("koimidi-sounds") and models ("koimidi-models") stay
       .then((keys) => Promise.all(keys.filter((k) => /^koimidi-[0-9a-f]{12}$/.test(k) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
@@ -35,6 +36,23 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET' || !req.url.startsWith(self.registration.scope)) return;
   // sound banks are large and optional: the page downloads and keeps them itself
   if (req.url.startsWith(scoped('sounds/'))) return;
+  // the listening networks: fetched the first time they are used, then kept across versions of the app
+  // (a network whose weights change gets a new folder)
+  if (req.url.startsWith(scoped('models/'))) {
+    event.respondWith(
+      caches.open(MODELS).then((cache) =>
+        cache.match(req, { ignoreSearch: true }).then(
+          (hit) =>
+            hit ||
+            fetch(req).then((res) => {
+              if (res.ok && res.type === 'basic') void cache.put(req, res.clone());
+              return res;
+            }),
+        ),
+      ),
+    );
+    return;
+  }
   // the page itself: always the cached shell of this version
   if (req.mode === 'navigate') {
     event.respondWith(caches.match(scoped('./'), { ignoreVary: true }).then((hit) => hit || fetch(req)));
